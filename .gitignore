@@ -1,0 +1,25 @@
+# Anything that could be a key, and everything a build produces.
+.env
+.env.local
+**/.env
+**/.env.local
+node_modules/
+dist/
+target/
+**/aws/dist/
+*.zip
+*.log
+kyc-state.json
+keeper-state.json
+
+# The handoff notes: who decided what, what is deployed where, what is left.
+CONTEXT.md
+
+# Not published: the KYC provider integration names a third party who has not
+# agreed to it. Built and tested, kept local until that changes.
+kyc/
+app/src/kyc.ts
+
+# Superseded deployment records, kept locally as history.
+deployments/*.pre-*.json
+deployments/pre-*.json

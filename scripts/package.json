@@ -1,0 +1,15 @@
+{
+  "name": "hyperveil-scripts",
+  "private": true,
+  "scripts": {
+    "deploy:hyperevm": "node deploy-hyperevm.js",
+    "deploy:starknet": "node deploy-starknet.js",
+    "wire": "node wire.js",
+    "dvns": "node configure-dvns.js",
+    "config": "node write-config.js"
+  },
+  "dependencies": {
+    "ethers": "^6",
+    "starknet": "^10.0.2"
+  }
+}

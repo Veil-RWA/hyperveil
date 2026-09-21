@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>HyperVeil</title>
+    <meta name="description" content="Trade Hyperliquid spot privately from Starknet, settled in Veil." />
+    <link rel="icon" type="image/png" href="/veil-logo.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <div class="grid-bg" aria-hidden="true"></div>
+    <div class="glow" aria-hidden="true"></div>
+
+    <header class="nav">
+      <div class="nav-inner">
+        <a class="brand" href="/">
+          <img src="/veil-logo.png" alt="" />
+          <span>
+            <span class="brand-name">HyperVeil</span>
+            <div class="brand-by">by Veil</div>
+          </span>
+        </a>
+        <nav class="tabs" role="tablist" id="tabs">
+          <button class="tab is-active" data-tab="trade" role="tab">Trade</button>
+          <button class="tab" data-tab="portfolio" role="tab">Portfolio</button>
+          <button class="tab" data-tab="deposit" role="tab">Deposit</button>
+          <button class="tab" data-tab="withdraw" role="tab">Withdraw</button>
+        </nav>
+        <div class="nav-right" id="nav-right"></div>
+      </div>
+    </header>
+
+    <div id="notice" hidden></div>
+    <main id="view"></main>
+
+    <footer>
+      <span>HyperVeil · private Hyperliquid spot, settled in Veil</span>
+      <span id="foot-net"></span>
+      <a href="https://www.veil-rwa.com/" target="_blank" rel="noreferrer">veil-rwa.com</a>
+    </footer>
+
+    <div id="activity" class="activity panel" hidden></div>
+    <div id="toast" class="toast" hidden></div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

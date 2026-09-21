@@ -1,0 +1,72 @@
+{
+  "evmNetwork": "hyperevm-testnet",
+  "starknetNetwork": "starknet-sepolia",
+  "evmEid": 40362,
+  "starknetEid": 40500,
+  "evm": {
+    "relayEndpoint": "0x81605BAF7b733F2D47aB2BE6206ad96ad68a1253",
+    "omnibus": "0x938acDEf0428797256180dA45226f79513c35A25",
+    "deployBlock": 64797085,
+    "owner": "0x878ffCF3351C6596Bd75355E00319AB5Fcf1c639",
+    "endpoint": "0x81605BAF7b733F2D47aB2BE6206ad96ad68a1253"
+  },
+  "starknet": {
+    "auditorPublicKey": "0x7fe2059b467895690cfaee48d371c753bc79558154179f63784c35bbd7086b",
+    "usdc": "0x0512feAc6339Ff7889822cb5aA2a86C848e9D392bB0E3E237C008674feeD8343",
+    "strk": "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d",
+    "permissionManager": "0x617394e6224a5f25650752a26421e181f2c638c07c6cd110229ec9350aa5299",
+    "kycOperator": "0x07f69F195543eE9Bc33E3Fb1BF4609e96d49a7Cc9e22A136eD4A3F80570C7121",
+    "usdcRules": "0x349b7cae2ad78fc2d5ef4ff1e1512b5856e74f4f04cb5c29cfe68a56479f9e6",
+    "strkRules": "0x43444686c7706c85a0d1ab6de02877af897c264d4d4436b66ccd64e3c4d14a9",
+    "strk20Pool": "0x254a6b2997ef52e9f830ce1f543f6b29768295e8d17e2267d672c552cfe0d91",
+    "relayEndpoint": "0x71c06e53db65b2da06a0c01c4e33526cb8f50b8ca5a13ffe5b8da2c6cd934a",
+    "factory": "0x3a571e24822507d8c3131cf2b74accdea94feecc758dc963b962308cdae308a",
+    "pool": "0x5c2684e14d14ab4f279f0bc5eebd4bfa0f2b2e5ba4c39b966a7d607de39efbe",
+    "deployBlock": 15394896,
+    "gateway": "0x31ade7352458e0c68a7dc09ad34305a44836c18064dc53263932679a6218018",
+    "entryHelper": "0x776f9aac1175c257e76367f5397111f60c14acafaa23cb5ab6ec2a68c1eb44c",
+    "exitVault": "0x20fcabedfa6f3f49f51eb69495a01a8275e438736caed7f6d1f65475743e6af",
+    "feeAdapter": "0x7cc8ffc37b4c9fb677b1e821ac4605c99694bbededab6aa681704818ecf5be8",
+    "strk20Entry": "0x33c2882c753a1d7bdb023c52004ec331986a5bf3f497f0421d7fca7138b10aa"
+  },
+  "twins": {
+    "USDC": {
+      "hlToken": 0,
+      "decimals": 8,
+      "symbol": "hvUSDC",
+      "address": "0x3b8e005bbf43e38d19ff1a0a8125ae3f2bc79f1fd55cab44fedd61cdfe109b2"
+    },
+    "PURR": {
+      "hlToken": 1,
+      "decimals": 5,
+      "symbol": "hvPURR",
+      "address": "0x1174c0b4b6e830f87c55015d59b8c735807ae3267d05f02831b486936af428b"
+    },
+    "HYPE": {
+      "hlToken": 1105,
+      "decimals": 8,
+      "symbol": "hvHYPE",
+      "address": "0x1676b16b589a1959221b0755ed08e115ace4a76a120b546a53a75acc23eea48"
+    }
+  },
+  "classes": {
+    "HyperVeilPermissionManager": "0x801b4b003ccb4345534512587971e9ec7318ee01ffb5dd7b32df70be7fe6d0",
+    "HyperVeilGateway": "0x625de376aa6baef682e533c06faf06a50fb9f4ec99b35b873e0e285ec7f603e",
+    "HyperVeilTwin": "0x3a2fb2a23278075b0cc20b68c13548810ea07ad39e17d82a08e987d88253a08",
+    "HyperVeilKycRules": "0x717c54ea338a3e3ca3f099a0abb9efa37dbc661fc19ff25d56eca9f3376fda1",
+    "HyperVeilFeeAdapter": "0x79b7def5f3acedfff0451b38400406bcf220234369df3ddfea19fb81db6465b",
+    "HyperVeilStrk20Entry": "0x2782a96b28b470079025d0a09d178a8b3cbed31ed6b947d54fe53f7b0b6ee71",
+    "HyperVeilEntryHelper": "0x6517fc6d4af8f15a033024ef35a48080687eb86b65cea988789c8da44e74a0e",
+    "HyperVeilExitVault": "0x7d7b545631ae1cb278641b344badd6032eb468961ec6572ee5eefdead6b7ea0",
+    "HyperVeilRelayEndpoint": "0x4f6f5381ece0b1a08fc511067a11d6cb67e8aeafc66e87d8e97541c4c9a3624",
+    "VeilERC3643": "0x6a98d3711885369bb3e0ced02274fd98dbbc79ff95b37b04061e2057e42ae60",
+    "VeilERC3643Factory": "0x550be4253561abd28bbaea24e937a470640c22cf63f59b508dcd3907d75494a"
+  },
+  "wired": {
+    "keeperEvm": "0x878ffCF3351C6596Bd75355E00319AB5Fcf1c639",
+    "keeperSn": "0x7f69f195543ee9bc33e3fb1bf4609e96d49a7cc9e22a136ed4a3f80570c7121",
+    "exchange": "0x7f69f195543ee9bc33e3fb1bf4609e96d49a7cc9e22a136ed4a3f80570c7121",
+    "at": "2026-09-21T11:19:33.929Z",
+    "abstraction": 1
+  }
+}

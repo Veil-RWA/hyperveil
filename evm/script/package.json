@@ -1,0 +1,15 @@
+{
+  "name": "hyperveil-evm",
+  "private": true,
+  "scripts": {
+    "build": "node build.js",
+    "test": "bash test.sh"
+  },
+  "dependencies": {
+    "@ethereumjs/common": "^4",
+    "@ethereumjs/evm": "^3",
+    "@ethereumjs/util": "^9",
+    "ethers": "^6",
+    "solc": "0.8.28"
+  }
+}

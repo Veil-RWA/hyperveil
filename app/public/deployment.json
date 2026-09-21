@@ -1,0 +1,60 @@
+{
+  "network": "testnet",
+  "starknet": {
+    "rpc": "https://starknet-sepolia.drpc.org",
+    "chainId": "0x534e5f5345504f4c4941",
+    "deployBlock": 15394896,
+    "pool": "0x5c2684e14d14ab4f279f0bc5eebd4bfa0f2b2e5ba4c39b966a7d607de39efbe",
+    "gateway": "0x31ade7352458e0c68a7dc09ad34305a44836c18064dc53263932679a6218018",
+    "entryHelper": "0x776f9aac1175c257e76367f5397111f60c14acafaa23cb5ab6ec2a68c1eb44c",
+    "exitVault": "0x20fcabedfa6f3f49f51eb69495a01a8275e438736caed7f6d1f65475743e6af",
+    "permissionManager": "0x617394e6224a5f25650752a26421e181f2c638c07c6cd110229ec9350aa5299",
+    "feeAdapter": "0x7cc8ffc37b4c9fb677b1e821ac4605c99694bbededab6aa681704818ecf5be8",
+    "strk20Entry": "0x33c2882c753a1d7bdb023c52004ec331986a5bf3f497f0421d7fca7138b10aa",
+    "usdc": "0x0512feAc6339Ff7889822cb5aA2a86C848e9D392bB0E3E237C008674feeD8343",
+    "strk": "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d",
+    "twins": [
+      {
+        "hlToken": 0,
+        "address": "0x3b8e005bbf43e38d19ff1a0a8125ae3f2bc79f1fd55cab44fedd61cdfe109b2",
+        "symbol": "hvUSDC",
+        "decimals": 8
+      },
+      {
+        "hlToken": 1,
+        "address": "0x1174c0b4b6e830f87c55015d59b8c735807ae3267d05f02831b486936af428b",
+        "symbol": "hvPURR",
+        "decimals": 5
+      },
+      {
+        "hlToken": 1105,
+        "address": "0x1676b16b589a1959221b0755ed08e115ace4a76a120b546a53a75acc23eea48",
+        "symbol": "hvHYPE",
+        "decimals": 8
+      }
+    ]
+  },
+  "hyperliquid": {
+    "api": "https://api.hyperliquid-testnet.xyz"
+  },
+  "prover": {
+    "endpoint": "",
+    "transport": "job",
+    "masterAddress": ""
+  },
+  "keeper": {
+    "intake": ""
+  },
+  "kyc": {
+    "url": ""
+  },
+  "fees": {
+    "returnValue": "0",
+    "maxFeeBps": 10,
+    "headroomPct": 30
+  },
+  "cctp": {
+    "minFinality": 1000,
+    "maxFeeBps": 20
+  }
+}
