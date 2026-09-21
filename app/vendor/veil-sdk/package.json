@@ -1,0 +1,13 @@
+{
+  "name": "veil-sdk",
+  "version": "0.1.0",
+  "description": "Veil privacy-pool SDK: client-side note discovery + ERC-3643 balances (STRK20 \u00a75.4; the viewing key never leaves the device) plus a SNIP-36 prover client (VeilProver) to execute pool functions via derive -> prove -> settle.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "dependencies": {
+    "@scure/starknet": "^1.0.0",
+    "starknet": "^6.11.0"
+  },
+  "_comment": "Vendored build of the Veil SDK, as veilx does it. The app is a standalone repository, so it carries the compiled SDK rather than reaching outside itself for it."
+}

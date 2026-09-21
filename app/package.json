@@ -15,7 +15,7 @@
     "@starknet-io/get-starknet": "^4.0.8",
     "@starknet-io/get-starknet-wallet-standard": "^6.0.6",
     "starknet": "^10.8.0",
-    "veil-sdk": "file:../../sdk"
+    "veil-sdk": "file:./vendor/veil-sdk"
   },
   "devDependencies": {
     "@types/node": "^22.20.4",
