@@ -88,7 +88,7 @@ export async function deriveViewingKey(account, chainId) {
 }
 /** Verify a signature against a RAW Stark public key — must be the FULL curve
  *  point (`ec.starkCurve.getPublicKey`); the x-only stark key an account stores
- *  always fails. For Argent/Braavos/multisig, ask the account instead: their
+ *  always fails. For Ready/Braavos/multisig, ask the account instead: their
  *  contract defines what a valid signature is (see the on-chain variant). */
 export function verifyViewingKeySignature(sig, chainId, account, publicKey) {
     const { r, s } = signatureToRS(sig);
