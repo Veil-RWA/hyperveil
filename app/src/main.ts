@@ -1,6 +1,7 @@
 // HyperVeil app: boot, navigation, and the polling that keeps market data and
 // account state fresh. Views live in ./views.
 
+import { inject } from "@vercel/analytics";
 import { S, connect, disconnect, onRerender, refreshAccount, restore } from "./app";
 import { CIRCLE_FAUCET, deployment, hasTestnetFaucet, isDeployed, loadDeployment } from "./config";
 import { escapeHtml, short } from "./format";
@@ -146,3 +147,6 @@ async function boot(): Promise<void> {
 }
 
 void boot();
+
+// Initialize Vercel Web Analytics
+inject();
