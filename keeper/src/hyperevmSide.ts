@@ -1,5 +1,7 @@
 // The keeper's HyperEVM side: the omnibus's reads and the keeper's
-// transactions there (reports, CCTP relays, exit burns).
+// transactions there (reports, CCTP relays, exit burns), and the first leg of
+// a deposit's way in: the USDC Circle minted to the keeper, into the keeper's
+// HyperCore account through Circle's CoreDepositWallet.
 
 import { Contract, JsonRpcProvider, Wallet, type EventLog } from "ethers";
 
@@ -18,6 +20,13 @@ export const OMNIBUS_ABI = [
   "event ExitBurned(bytes32 indexed exitId, uint256 amountUsdc6)",
 ];
 
+const ERC20_ABI = ["function approve(address spender, uint256 amount) returns (bool)"];
+const CORE_DEPOSIT_WALLET_ABI = ["function deposit(uint256 amount, uint32 destinationDex)"];
+
+/** Circle's CoreDepositWallet destinations (Circle's HyperEVM docs). */
+export type CoreDex = "spot" | "perps";
+const CORE_DEX: Record<CoreDex, number> = { perps: 0, spot: 0xffffffff };
+
 export interface ReportItem {
   routeId: string;
   cumDraw: bigint;
@@ -34,11 +43,24 @@ export class HyperEvmSide {
   readonly provider: JsonRpcProvider;
   readonly wallet: Wallet;
   readonly omnibus: Contract;
+  private readonly usdc?: Contract;
+  private readonly coreDepositWallet?: Contract;
 
-  constructor(rpcUrl: string, keeperKey: string, readonly omnibusAddress: string) {
+  constructor(
+    rpcUrl: string,
+    keeperKey: string,
+    readonly omnibusAddress: string,
+    /** Circle's USDC and CoreDepositWallet on HyperEVM: only needed to move
+     *  deposits into HyperCore. */
+    circle?: { usdc: string; coreDepositWallet: string },
+  ) {
     this.provider = new JsonRpcProvider(rpcUrl);
     this.wallet = new Wallet(keeperKey, this.provider);
     this.omnibus = new Contract(omnibusAddress, OMNIBUS_ABI, this.wallet);
+    if (circle) {
+      this.usdc = new Contract(circle.usdc, ERC20_ABI, this.wallet);
+      this.coreDepositWallet = new Contract(circle.coreDepositWallet, CORE_DEPOSIT_WALLET_ABI, this.wallet);
+    }
   }
 
   blockNumber(): Promise<number> {
@@ -101,6 +123,18 @@ export class HyperEvmSide {
 
   receiveDeposit(message: string, attestation: string): Promise<string> {
     return this.sent(this.omnibus.receiveDeposit(message, attestation));
+  }
+
+  /** What Circle minted for deposit `id` (6 dp), as the omnibus recorded it. */
+  async depositArrived(id: string): Promise<bigint> {
+    return (await this.omnibus.deposits(id)).arrived6 as bigint;
+  }
+
+  /** Moves `amount6` of the keeper's HyperEVM USDC into its HyperCore account. */
+  async toCore(amount6: bigint, dex: CoreDex): Promise<string> {
+    if (!this.usdc || !this.coreDepositWallet) throw new Error("no Circle addresses configured");
+    await this.sent(this.usdc.approve(await this.coreDepositWallet.getAddress(), amount6));
+    return this.sent(this.coreDepositWallet.deposit(amount6, CORE_DEX[dex]));
   }
 
   creditDeposit(id: string): Promise<string> {

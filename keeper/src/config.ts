@@ -4,6 +4,7 @@
 
 import { HL_API } from "./hlApi.js";
 import { IRIS_API } from "./iris.js";
+import type { CoreDex } from "./hyperevmSide.js";
 import type { KeeperParams } from "./keeper.js";
 
 export interface KeeperConfig {
@@ -21,7 +22,16 @@ export interface KeeperConfig {
     permissionManager: string;
     startBlock: number;
   };
-  hyperevm: { rpcUrl: string; keeperKey: string; omnibus: string; startBlock: number };
+  hyperevm: {
+    rpcUrl: string;
+    keeperKey: string;
+    omnibus: string;
+    startBlock: number;
+    /** Circle's USDC and CoreDepositWallet: deposits are minted to the keeper,
+     *  which moves them into HyperCore through the wallet. */
+    usdc: string;
+    coreDepositWallet: string;
+  };
   /** TESTNET ONLY: set when LayerZero cannot carry the messages and the keeper
    *  must (see relay.ts). Both endpoints are required together. */
   relay?: { starknetEndpoint: string; evmEndpoint: string };
@@ -48,6 +58,14 @@ function openAllowlist(env: NodeJS.ProcessEnv, network: string): boolean {
   if (network === "mainnet") throw new Error("HV_OPEN_ALLOWLIST is testnet only");
   if (!env.HV_PERMISSION_MANAGER) throw new Error("HV_OPEN_ALLOWLIST needs HV_PERMISSION_MANAGER");
   return true;
+}
+
+/** `HV_CORE_DEX`: where Circle's CoreDepositWallet puts a deposit in the
+ *  keeper's HyperCore account before the spot send (default perps). */
+function coreDex(env: NodeJS.ProcessEnv): CoreDex {
+  const dex = env.HV_CORE_DEX ?? "perps";
+  if (dex !== "perps" && dex !== "spot") throw new Error("HV_CORE_DEX must be perps or spot");
+  return dex;
 }
 
 function need(env: NodeJS.ProcessEnv, name: string): string {
@@ -82,6 +100,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): KeeperConfig {
       keeperKey: need(env, "EVM_KEEPER_PRIVATE_KEY"),
       omnibus: need(env, "HV_OMNIBUS"),
       startBlock: Number(env.EVM_START_BLOCK ?? 0),
+      usdc: need(env, "EVM_USDC"),
+      coreDepositWallet: need(env, "HV_CORE_DEPOSIT_WALLET"),
     },
     relay: env.HV_RELAY === "1"
       ? {
@@ -105,6 +125,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): KeeperConfig {
       maxReportItems: Number(env.HV_MAX_REPORT_ITEMS ?? 8),
       maxLogWindows: Number(env.HV_MAX_LOG_WINDOWS ?? 20),
       openAllowlist: open,
+      coreDex: coreDex(env),
     },
     pollMs: Number(env.HV_POLL_MS ?? 5_000),
     stateFile: env.HV_STATE_FILE ?? "keeper-state.json",

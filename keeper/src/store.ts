@@ -45,7 +45,17 @@ export interface AllowlistRequest {
 
 export interface DepositState {
   burnTx: string;
-  stage: "burned" | "relayed" | "credited";
+  /** burned: waiting for Circle's attestation.
+   *  relayed: minted to the keeper on HyperEVM (`amount6`).
+   *  bridging: sent into the keeper's HyperCore account, which held
+   *    `baseline8` just before; arrived once it holds `baseline8 + amount`.
+   *  sent: spot-sent to the omnibus.
+   *  credited: the omnibus credited the twin. */
+  stage: "burned" | "relayed" | "bridging" | "sent" | "credited";
+  /** What Circle minted, 6 dp (a decimal string: the state is JSON). */
+  amount6?: string;
+  /** The keeper's HyperCore USDC (8 dp) just before this deposit went in. */
+  baseline8?: string;
 }
 
 export interface ExitState {

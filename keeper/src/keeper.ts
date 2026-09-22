@@ -27,9 +27,9 @@ import { hlOrderFor, type SpotPair } from "./hlMath.js";
 import { pairFor, pairsFromSpotMeta, type HyperliquidApi } from "./hlApi.js";
 import { matchBook, type BookOrder } from "./matcher.js";
 import { emptyRelayState, type Relay } from "./relay.js";
-import type { HyperEvmSide, ReportItem } from "./hyperevmSide.js";
+import type { CoreDex, HyperEvmSide, ReportItem } from "./hyperevmSide.js";
 import type { StarknetSide, OrderRecord } from "./starknetSide.js";
-import { key, type KeeperState, type Opening } from "./store.js";
+import { key, type DepositState, type KeeperState, type Opening } from "./store.js";
 
 export interface KeeperParams {
   maxFeeBps: number;
@@ -49,9 +49,14 @@ export interface KeeperParams {
   maxReportItems: number;
   /** TESTNET ONLY: put anyone who asks the intake on the pool's allowlist. */
   openAllowlist?: boolean;
+  /** Where Circle's CoreDepositWallet puts a deposit in the keeper's HyperCore
+   *  account on its way to the omnibus. Default perps. */
+  coreDex?: CoreDex;
 }
 
 const ORDER_OPEN = 0;
+/** HyperCore USDC (8 dp) per CCTP USDC unit (6 dp): the omnibus's constant. */
+const USDC_CORE_PER_CCTP_UNIT = 100n;
 /** The exit vault's EXIT_DELIVERED. */
 const EXIT_DELIVERED = 3;
 const ROUTE_OPEN = 1;
@@ -448,48 +453,100 @@ export class Keeper {
 
   // ── 7. deposits ───────────────────────────────────────────────────────────
 
+  // A deposit's way in: Circle mints the USDC to the keeper on HyperEVM (the
+  // omnibus relays the message and records the amount), the keeper moves it
+  // into its own HyperCore account and spot-sends it to the omnibus's, and the
+  // omnibus credits the twin once HyperCore holds it (it checks, not trusts).
   async relayDeposits(): Promise<void> {
-    for (const [id, d] of Object.entries(this.state.deposits)) {
-      if (d.stage === "burned") {
-        const att = await this.iris.attestation(CCTP_DOMAIN.starknet, d.burnTx);
-        if (!att) continue;
-        await this.evm.receiveDeposit(att.message, att.attestation);
-        d.stage = "relayed";
-        this.log(`relayed deposit ${id}`);
-      } else if (d.stage === "relayed") {
-        await this.evm.creditDeposit(b32(BigInt(id)));
-        d.stage = "credited";
-        this.log(`credited deposit ${id}`);
+    const deposits = Object.entries(this.state.deposits);
+    // One deposit crosses into HyperCore at a time: its arrival is read as the
+    // keeper's HyperCore balance growing by its amount, so two at once would
+    // blur. `busy` also holds for the rest of a tick in which one landed, so
+    // the next one's baseline is read a tick later, after the spot send.
+    let busy = deposits.some(([, d]) => d.stage === "bridging");
+    for (const [id, d] of deposits) {
+      // Each deposit on its own: one that cannot move yet must not hold back
+      // the ones behind it.
+      try {
+        if (d.stage === "relayed" && busy) continue;
+        if (d.stage === "relayed" || d.stage === "bridging") busy = true;
+        await this.relayDeposit(id, d);
+      } catch (e) {
+        this.log(`[deposits] ${id}: ${(e as Error).message}`);
       }
     }
+  }
+
+  private async relayDeposit(id: string, d: DepositState): Promise<void> {
+    const dex = this.params.coreDex ?? "perps";
+    const keeperOnCore = this.evm.wallet.address;
+    if (d.stage === "burned") {
+      const att = await this.iris.attestation(CCTP_DOMAIN.starknet, d.burnTx);
+      if (!att) return;
+      await this.evm.receiveDeposit(att.message, att.attestation);
+      d.amount6 = String(await this.evm.depositArrived(b32(BigInt(id))));
+      d.stage = "relayed";
+      this.log(`relayed deposit ${id}: ${d.amount6} USDC (6 dp) minted to the keeper`);
+    } else if (d.stage === "relayed") {
+      const amount6 = BigInt(d.amount6 ?? (await this.evm.depositArrived(b32(BigInt(id)))));
+      d.amount6 = String(amount6);
+      d.baseline8 = String(await this.coreUsdc8(keeperOnCore, dex));
+      const tx = await this.evm.toCore(amount6, dex);
+      d.stage = "bridging";
+      this.log(`deposit ${id} into the keeper's HyperCore ${dex}: ${tx}`);
+    } else if (d.stage === "bridging") {
+      const amount8 = BigInt(d.amount6!) * USDC_CORE_PER_CCTP_UNIT;
+      if ((await this.coreUsdc8(keeperOnCore, dex)) < BigInt(d.baseline8!) + amount8) return;
+      if (dex === "perps") await this.hl.usdClassTransfer(amount8, false);
+      await this.hl.spotSendUsdc(this.evm.omnibusAddress, amount8);
+      d.stage = "sent";
+      this.log(`spot-sent deposit ${id} to the omnibus`);
+    } else if (d.stage === "sent") {
+      await this.evm.creditDeposit(b32(BigInt(id)));
+      d.stage = "credited";
+      this.log(`credited deposit ${id}`);
+    }
+  }
+
+  private coreUsdc8(user: string, dex: CoreDex): Promise<bigint> {
+    return dex === "perps" ? this.hl.usdcPerps8(user) : this.hl.usdcSpot8(user);
   }
 
   // ── 8. exits ──────────────────────────────────────────────────────────────
 
   async relayExits(): Promise<void> {
     for (const [id, x] of Object.entries(this.state.exits)) {
-      if (x.stage === "requested") {
-        // Reverts (ExitNotReady) until HyperCore has paid the USDC out to the EVM.
-        x.burnTx = await this.evm.burnExit(b32(BigInt(id)));
-        x.stage = "burned";
-        this.log(`burned exit ${id}`);
-      } else if (x.stage === "burned" && x.burnTx) {
-        const att = await this.iris.attestation(CCTP_DOMAIN.hyperevm, x.burnTx);
-        if (!att) continue;
-        await this.sn.receiveExit(getBytes(att.message), getBytes(att.attestation));
-        x.stage = (await this.sn.exitStatus(BigInt(id))) === EXIT_DELIVERED ? "delivered" : "funded";
-        this.log(`${x.stage} exit ${id}`);
-      } else if (x.stage === "funded") {
-        // The vault holds the USDC: the pool refused the fill (paused, or the
-        // vault is not an adapter yet). Anyone may deliver it later.
-        if ((await this.sn.exitStatus(BigInt(id))) === EXIT_DELIVERED) {
-          x.stage = "delivered";
-          continue;
-        }
-        await this.sn.retryDelivery(BigInt(id));
-        x.stage = "delivered";
-        this.log(`delivered exit ${id}`);
+      try {
+        await this.relayExit(id, x);
+      } catch (e) {
+        this.log(`[exits] ${id}: ${(e as Error).message}`);
       }
+    }
+  }
+
+  /** One exit, one step forward. Each exit on its own, like deposits. */
+  private async relayExit(id: string, x: KeeperState["exits"][string]): Promise<void> {
+    if (x.stage === "requested") {
+      // Reverts (ExitNotReady) until HyperCore has paid the USDC out to the EVM.
+      x.burnTx = await this.evm.burnExit(b32(BigInt(id)));
+      x.stage = "burned";
+      this.log(`burned exit ${id}`);
+    } else if (x.stage === "burned" && x.burnTx) {
+      const att = await this.iris.attestation(CCTP_DOMAIN.hyperevm, x.burnTx);
+      if (!att) return;
+      await this.sn.receiveExit(getBytes(att.message), getBytes(att.attestation));
+      x.stage = (await this.sn.exitStatus(BigInt(id))) === EXIT_DELIVERED ? "delivered" : "funded";
+      this.log(`${x.stage} exit ${id}`);
+    } else if (x.stage === "funded") {
+      // The vault holds the USDC: the pool refused the fill (paused, or the
+      // vault is not an adapter yet). Anyone may deliver it later.
+      if ((await this.sn.exitStatus(BigInt(id))) === EXIT_DELIVERED) {
+        x.stage = "delivered";
+        return;
+      }
+      await this.sn.retryDelivery(BigInt(id));
+      x.stage = "delivered";
+      this.log(`delivered exit ${id}`);
     }
   }
 

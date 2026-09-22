@@ -34,11 +34,10 @@ async function setup() {
   const usdc = await chain.deploy('MockUSDC');
   const transmitter = await chain.deploy('MockMessageTransmitter', [usdc.hex]);
   const messenger = await chain.deploy('MockTokenMessenger', [usdc.hex]);
-  const wallet = await chain.deploy('MockCoreDepositWallet', [usdc.hex, spotBalance.hex]);
   // The relay endpoint stands where LayerZero's would.
   const endpoint = await chain.deploy('HyperVeilRelayEndpoint', [addr(OWNER), addr(KEEPER)]);
   const omnibus = await chain.deploy('HyperVeilOmnibus', [
-    endpoint.hex, addr(OWNER), SN_EID, usdc.hex, messenger.hex, transmitter.hex, wallet.hex,
+    endpoint.hex, addr(OWNER), SN_EID, usdc.hex, messenger.hex, transmitter.hex,
   ]);
   succeeds(await omnibus.call('setPeer', [SN_EID, GATEWAY], OWNER));
   succeeds(await omnibus.call('setKeeper', [addr(KEEPER)], OWNER));
@@ -70,9 +69,11 @@ test('a reply needs no budget: the relay charges nothing', async () => {
     ['uint32', 'uint32', 'uint32', 'bytes32', 'bytes32', 'bytes32', 'bytes32', 'uint32', 'uint32',
       'uint32', 'bytes32', 'bytes32', 'uint256', 'bytes32', 'uint256', 'uint256', 'uint256', 'bytes32'],
     [1, 25, 19, B32(0x99), B32(0x07d4), B32(0x28b5), B32(BigInt(env.omnibus.hex)), 2000, 2000,
-      1, B32(0x0330), B32(BigInt(env.omnibus.hex)), DEPOSIT6, ENTRY_HELPER, 0, 0, 0, DEPOSIT_ID]
+      1, B32(0x0330), B32(KEEPER), DEPOSIT6, ENTRY_HELPER, 0, 0, 0, DEPOSIT_ID]
   );
   succeeds(await env.omnibus.call('receiveDeposit', [m, ethers.toUtf8Bytes('ATTESTED')], STRANGER));
+  // Circle minted to the keeper, which spot-sends it to the omnibus.
+  await env.spotBalance.call('credit', [env.omnibus.hex, USDC, DEPOSIT6 * 100n]);
   // No budget was ever funded (no value came with the instruction), and the
   // credit still goes out: on this endpoint a message is free.
   eq((await env.omnibus.call('budget', [DEPOSIT_ID])).decoded[0], 0n, 'no budget');

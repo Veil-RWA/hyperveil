@@ -5,10 +5,10 @@
   "starknetEid": 40500,
   "evm": {
     "relayEndpoint": "0x81605BAF7b733F2D47aB2BE6206ad96ad68a1253",
-    "omnibus": "0x938acDEf0428797256180dA45226f79513c35A25",
-    "deployBlock": 64797085,
     "owner": "0x878ffCF3351C6596Bd75355E00319AB5Fcf1c639",
-    "endpoint": "0x81605BAF7b733F2D47aB2BE6206ad96ad68a1253"
+    "endpoint": "0xf9e1815f151024bde4b7c10bac10e8ba9f6b53e1",
+    "omnibus": "0x2BC67984274f86c425CCf8E123dd40689f2a28e2",
+    "deployBlock": 64959670
   },
   "starknet": {
     "auditorPublicKey": "0x7fe2059b467895690cfaee48d371c753bc79558154179f63784c35bbd7086b",
@@ -24,10 +24,10 @@
     "pool": "0x5c2684e14d14ab4f279f0bc5eebd4bfa0f2b2e5ba4c39b966a7d607de39efbe",
     "deployBlock": 15394896,
     "gateway": "0x31ade7352458e0c68a7dc09ad34305a44836c18064dc53263932679a6218018",
-    "entryHelper": "0x776f9aac1175c257e76367f5397111f60c14acafaa23cb5ab6ec2a68c1eb44c",
-    "exitVault": "0x20fcabedfa6f3f49f51eb69495a01a8275e438736caed7f6d1f65475743e6af",
     "feeAdapter": "0x7cc8ffc37b4c9fb677b1e821ac4605c99694bbededab6aa681704818ecf5be8",
-    "strk20Entry": "0x33c2882c753a1d7bdb023c52004ec331986a5bf3f497f0421d7fca7138b10aa"
+    "strk20Entry": "0x33c2882c753a1d7bdb023c52004ec331986a5bf3f497f0421d7fca7138b10aa",
+    "entryHelper": "0x2f59bda1afb72bbf74facd55b36046c6dd722b46d5831ab016b9599a5f99d7e",
+    "exitVault": "0x4d5e603c4a01f7eac7e6811972e6b6221120ff79ef353d74c31921fa211f16c"
   },
   "twins": {
     "USDC": {
@@ -56,7 +56,7 @@
     "HyperVeilKycRules": "0x717c54ea338a3e3ca3f099a0abb9efa37dbc661fc19ff25d56eca9f3376fda1",
     "HyperVeilFeeAdapter": "0x79b7def5f3acedfff0451b38400406bcf220234369df3ddfea19fb81db6465b",
     "HyperVeilStrk20Entry": "0x2782a96b28b470079025d0a09d178a8b3cbed31ed6b947d54fe53f7b0b6ee71",
-    "HyperVeilEntryHelper": "0x6517fc6d4af8f15a033024ef35a48080687eb86b65cea988789c8da44e74a0e",
+    "HyperVeilEntryHelper": "0x1c31bdca23a9d07298369f5967731d4631421a5daef46aff15f25fe9c0c4f5b",
     "HyperVeilExitVault": "0x7d7b545631ae1cb278641b344badd6032eb468961ec6572ee5eefdead6b7ea0",
     "HyperVeilRelayEndpoint": "0x4f6f5381ece0b1a08fc511067a11d6cb67e8aeafc66e87d8e97541c4c9a3624",
     "VeilERC3643": "0x6a98d3711885369bb3e0ced02274fd98dbbc79ff95b37b04061e2057e42ae60",
@@ -66,7 +66,7 @@
     "keeperEvm": "0x878ffCF3351C6596Bd75355E00319AB5Fcf1c639",
     "keeperSn": "0x7f69f195543ee9bc33e3fb1bf4609e96d49a7cc9e22a136ed4a3f80570c7121",
     "exchange": "0x7f69f195543ee9bc33e3fb1bf4609e96d49a7cc9e22a136ed4a3f80570c7121",
-    "at": "2026-09-21T11:19:33.929Z",
+    "at": "2026-09-22T15:00:45.393Z",
     "abstraction": 1
   }
 }

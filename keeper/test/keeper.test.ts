@@ -88,8 +88,11 @@ function world() {
       return "0xexit";
     },
   };
+  // The keeper's HyperCore perps USDC (8 dp); Circle's credit lands at once.
+  let keeperPerps8 = 0n;
   const evm = {
     omnibusAddress: "0xomni",
+    wallet: { address: "0xkeeper" },
     blockNumber: async () => 0,
     events: async () => [],
     routeStatus: async (r: string) => evmRouteStatus.get(r) ?? 0n,
@@ -99,6 +102,12 @@ function world() {
     },
     receiveDeposit: async () => {
       calls.push("receiveDeposit");
+      return "0x";
+    },
+    depositArrived: async () => 1_000_000n,
+    toCore: async (amount6: bigint) => {
+      calls.push(`toCore ${amount6}`);
+      keeperPerps8 += amount6 * 100n;
       return "0x";
     },
     creditDeposit: async (id: string) => {
@@ -120,6 +129,14 @@ function world() {
     }),
     orderStatus: async (_: string, cloid: bigint) => hlStatus.get(cloid) ?? { status: "unknownOid" },
     fillsSince: async () => fills,
+    usdcPerps8: async () => keeperPerps8,
+    usdClassTransfer: async (amount8: bigint) => {
+      calls.push(`usdClassTransfer ${amount8}`);
+      keeperPerps8 -= amount8;
+    },
+    spotSendUsdc: async (to: string, amount8: bigint) => {
+      calls.push(`spotSend ${to} ${amount8}`);
+    },
   };
   const iris = {
     attestation: async (domain: number) => ({ message: "0x" + (domain === 25 ? "aa" : "bb").repeat(40), attestation: "0x01" }),
@@ -250,16 +267,18 @@ test("an order HyperCore never rested is closed with nothing spent, after the gr
   assert.deepEqual(w.calls, ["report 28673 draw=0 deliver=0 closed=true"]);
 });
 
-test("deposits are relayed then credited; an exit is burned, relayed and delivered", async () => {
+test("deposits are relayed, spot-sent then credited; an exit is burned, relayed and delivered", async () => {
   const w = world();
   w.state.deposits[key(0xd1n)] = { burnTx: "0xtx", stage: "burned" };
   w.state.exits[key(0xe1n)] = { stage: "requested" };
   w.exitStatus.set(0xe1n, 3); // the vault fills the note as it receives
-  await w.keeper.relayDeposits();
-  await w.keeper.relayDeposits();
+  for (let i = 0; i < 4; i++) await w.keeper.relayDeposits();
   await w.keeper.relayExits();
   await w.keeper.relayExits();
-  assert.deepEqual(w.calls, ["receiveDeposit", "creditDeposit 209", "burnExit 225", "receive_exit 40"]);
+  assert.deepEqual(w.calls, [
+    "receiveDeposit", "toCore 1000000", "usdClassTransfer 100000000", "spotSend 0xomni 100000000",
+    "creditDeposit 209", "burnExit 225", "receive_exit 40",
+  ]);
   assert.equal(w.state.deposits[key(0xd1n)].stage, "credited");
   assert.equal(w.state.exits[key(0xe1n)].stage, "delivered");
 });

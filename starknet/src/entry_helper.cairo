@@ -6,9 +6,10 @@
 //   1. registers the deposit with the gateway, naming the user's empty
 //      USDC-twin open note (the gateway claims the note and sends DEPOSIT to
 //      the omnibus, paying from the STRK prepaid against that note);
-//   2. burns `amount` through Circle CCTP to the omnibus on HyperEVM, with the
-//      deposit id as hook data so the omnibus can match the arriving USDC to
-//      the LayerZero instruction;
+//   2. burns `amount` through Circle CCTP to HyperEVM, minted to the keeper
+//      (which moves it to HyperCore and spot-sends it to the omnibus) and
+//      relayed only by the omnibus, with the deposit id as hook data so the
+//      omnibus can match the minted USDC to the LayerZero instruction;
 //   3. hands 1 unit back into the invoke's open note: a pool invoke must return
 //      a non-zero deposit.
 // So the user is never on-chain: the pool pays this contract and calls it, all
@@ -52,6 +53,7 @@ pub trait IHyperVeilEntryHelper<TContractState> {
     fn usdc(self: @TContractState) -> ContractAddress;
     fn token_messenger(self: @TContractState) -> ContractAddress;
     fn omnibus(self: @TContractState) -> u256;
+    fn mint_recipient(self: @TContractState) -> u256;
 }
 
 #[starknet::contract]
@@ -72,8 +74,12 @@ pub mod HyperVeilEntryHelper {
         gateway: ContractAddress,
         usdc: ContractAddress,
         token_messenger: ContractAddress,
-        /// The omnibus's HyperEVM address, as CCTP's 32-byte word.
+        /// The omnibus's HyperEVM address, as CCTP's 32-byte word: the only
+        /// account that may relay a deposit's mint (destination caller).
         omnibus: u256,
+        /// The keeper's HyperEVM address, as CCTP's 32-byte word: Circle mints
+        /// the USDC there, and the keeper spot-sends it to the omnibus.
+        mint_recipient: u256,
     }
 
     #[event]
@@ -98,15 +104,18 @@ pub mod HyperVeilEntryHelper {
         usdc: ContractAddress,
         token_messenger: ContractAddress,
         omnibus: u256,
+        mint_recipient: u256,
     ) {
         assert(!gateway.is_zero(), 'ZERO_GATEWAY');
         assert(!usdc.is_zero(), 'ZERO_USDC');
         assert(!token_messenger.is_zero(), 'ZERO_TOKEN_MESSENGER');
         assert(omnibus != 0 && omnibus.high < 0x100000000, 'BAD_OMNIBUS');
+        assert(mint_recipient != 0 && mint_recipient.high < 0x100000000, 'BAD_MINT_RECIPIENT');
         self.gateway.write(gateway);
         self.usdc.write(usdc);
         self.token_messenger.write(token_messenger);
         self.omnibus.write(omnibus);
+        self.mint_recipient.write(mint_recipient);
     }
 
     #[abi(embed_v0)]
@@ -136,8 +145,9 @@ pub mod HyperVeilEntryHelper {
             // 1. The instruction: claim the twin note, tell the omnibus.
             let deposit_id = gateway.register_deposit(twin_note_id, amount_usdc6, return_value);
 
-            // 2. The value: burn through CCTP to the omnibus, which alone may
-            //    relay the mint (destination caller), tagged with the deposit.
+            // 2. The value: burn through CCTP, minted to the keeper, which
+            //    spot-sends it to the omnibus; only the omnibus may relay the
+            //    mint (destination caller). Tagged with the deposit.
             let messenger = self.token_messenger.read();
             let omnibus = self.omnibus.read();
             let mut hook_data: ByteArray = Default::default();
@@ -147,7 +157,7 @@ pub mod HyperVeilEntryHelper {
                 .deposit_for_burn_with_hook(
                     amount_usdc6.into(),
                     HYPEREVM_DOMAIN,
-                    omnibus,
+                    self.mint_recipient.read(),
                     usdc.contract_address,
                     omnibus,
                     cctp_max_fee,
@@ -180,6 +190,9 @@ pub mod HyperVeilEntryHelper {
         }
         fn omnibus(self: @ContractState) -> u256 {
             self.omnibus.read()
+        }
+        fn mint_recipient(self: @ContractState) -> u256 {
+            self.mint_recipient.read()
         }
     }
 }

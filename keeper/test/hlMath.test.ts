@@ -106,7 +106,7 @@ test("the omnibus accepts exactly what the keeper computes", async () => {
   await tokenInfo.call("setToken", [150, 2, 8]);
   await tokenInfo.call("setToken", [0, 8, 8]);
   const one = "0x" + "11".repeat(20);
-  const omnibus = await chain.deploy("HyperVeilOmnibus", [one, one, 30500, one, one, one, one]);
+  const omnibus = await chain.deploy("HyperVeilOmnibus", [one, one, 30500, one, one, one]);
 
   let seed = 7n;
   const rand = (lo: bigint, hi: bigint) => {

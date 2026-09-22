@@ -140,6 +140,12 @@ function main() {
     'EVM_KEEPER_PRIVATE_KEY=' + keep('EVM_KEEPER_PRIVATE_KEY'),
     `HV_OMNIBUS=${d.evm.omnibus || ''}`,
     `EVM_START_BLOCK=${d.evm.deployBlock ?? 0}`,
+    '# Deposits are minted to the keeper, which moves them into its HyperCore',
+    '# account through Circle\'s CoreDepositWallet (HV_CORE_DEX: perps or spot)',
+    '# and spot-sends them to the omnibus.',
+    `EVM_USDC=${evmNet.usdc}`,
+    `HV_CORE_DEPOSIT_WALLET=${evmNet.coreDepositWallet}`,
+    `HV_CORE_DEX=${keep('HV_CORE_DEX') || 'perps'}`,
     '',
     ...(d.starknet.relayEndpoint && d.evm.relayEndpoint
       ? [

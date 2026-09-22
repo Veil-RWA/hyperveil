@@ -31,9 +31,6 @@ async function main() {
   const net = network(args.evm);
   if (net.kind !== 'evm') throw new Error(`${args.evm} is not a HyperEVM network`);
   const isMainnet = args.evm.endsWith('mainnet');
-  if (!net.coreDepositWallet) {
-    throw new Error(`no CoreDepositWallet pinned for ${args.evm} — fill it in scripts/config.js first`);
-  }
 
   const [key] = requireEnv('EVM_PRIVATE_KEY');
   const rpc = process.env.EVM_RPC_URL || net.rpc;
@@ -101,8 +98,7 @@ async function main() {
     const art = artifacts.HyperVeilOmnibus;
     const factory = new ethers.ContractFactory(art.abi, art.bytecode, wallet);
     const ctor = [
-      endpointAddress, wallet.address, d.starknetEid, net.usdc, net.tokenMessenger,
-      net.messageTransmitter, net.coreDepositWallet,
+      endpointAddress, wallet.address, d.starknetEid, net.usdc, net.tokenMessenger, net.messageTransmitter,
     ];
     const gasLimit = await provider.estimateGas({
       from: wallet.address,

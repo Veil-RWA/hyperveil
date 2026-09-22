@@ -234,6 +234,44 @@ async function spotSend(baseUrl, wallet, destination, token, amount, isMainnet) 
   });
 }
 
+const USD_CLASS_TRANSFER_TYPES = {
+  'HyperliquidTransaction:UsdClassTransfer': [
+    { name: 'hyperliquidChain', type: 'string' },
+    { name: 'amount', type: 'string' },
+    { name: 'toPerp', type: 'bool' },
+    { name: 'nonce', type: 'uint64' },
+  ],
+};
+
+/// Moves `amount` (a decimal string) of USDC between the signer's perps and
+/// spot balances on HyperCore (Python SDK `usd_class_transfer`). The testnet
+/// faucet credits perps, and a spot send spends spot.
+async function usdClassTransfer(baseUrl, wallet, amount, toPerp, isMainnet) {
+  const nonce = Date.now();
+  const signatureChainId = '0x66eee';
+  const message = {
+    hyperliquidChain: isMainnet ? 'Mainnet' : 'Testnet',
+    amount,
+    toPerp: Boolean(toPerp),
+    nonce,
+  };
+  const domain = {
+    name: 'HyperliquidSignTransaction',
+    version: '1',
+    chainId: Number(BigInt(signatureChainId)),
+    verifyingContract: '0x0000000000000000000000000000000000000000',
+  };
+  const signature = ethers.Signature.from(
+    await wallet.signTypedData(domain, USD_CLASS_TRANSFER_TYPES, message),
+  );
+  return postAction(baseUrl, {
+    action: { type: 'usdClassTransfer', signatureChainId, ...message },
+    nonce,
+    signature: { r: signature.r, s: signature.s, v: signature.v },
+    vaultAddress: null,
+  });
+}
+
 /// One spot order through the exchange, as an L1 action. `px` and `sz` are
 /// decimal STRINGS already rounded to Hyperliquid's tick and lot rules; `asset`
 /// is 10000 + the spot index. Ioc so it either crosses now or dies.
@@ -256,6 +294,7 @@ async function placeSpotOrder(baseUrl, wallet, { asset, isBuy, px, sz }, isMainn
 
 module.exports = {
   spotSend,
+  usdClassTransfer,
   placeSpotOrder,
   msgpackValue,
   info,

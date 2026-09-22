@@ -5,7 +5,7 @@
 // fee adapter and the STRK20 entry.
 //
 //   node deploy-starknet.js [--tokens PURR,HYPE] [--auditor-key 0x...]
-//                           [--starknet starknet-sepolia]
+//                           [--starknet starknet-sepolia] [--keeper-evm 0x...]
 //
 // HyperVeil gets its OWN pool: a Veil pool has exactly one exchange
 // (the keeper) and one venue (the gateway), so it cannot share the main pool.
@@ -230,9 +230,15 @@ async function main() {
   if (deferOmnibus) {
     done('deferred', 'needs the omnibus address; re-run this script after deploy-hyperevm.js');
   } else if (!d.starknet.entryHelper) {
+    // Circle mints a deposit's USDC to the keeper, which spot-sends it to the
+    // omnibus on HyperCore; the omnibus alone relays the mint.
+    const keeperEvm = args['keeper-evm'] || d.wired.keeperEvm;
+    if (!keeperEvm) throw new Error('--keeper-evm 0x… is required: deposits are minted to the keeper');
+    if (!/^0x[0-9a-fA-F]{40}$/.test(keeperEvm)) throw new Error(`--keeper-evm is not an address: ${keeperEvm}`);
+    d.wired.keeperEvm = keeperEvm;
     const cls = await declareIfNeeded(account, d, 'hyperveil', 'HyperVeilEntryHelper');
     d.starknet.entryHelper = await deploy(account, cls, [
-      d.starknet.gateway, net.usdc, net.tokenMessenger, ...u256(d.evm.omnibus),
+      d.starknet.gateway, net.usdc, net.tokenMessenger, ...u256(d.evm.omnibus), ...u256(d.wired.keeperEvm),
     ]);
     saveDeployment(args, d);
   }

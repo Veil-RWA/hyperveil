@@ -23,7 +23,10 @@ const sn = new StarknetSide(
   cfg.starknet.strk,
   cfg.starknet.permissionManager,
 );
-const evm = new HyperEvmSide(cfg.hyperevm.rpcUrl, cfg.hyperevm.keeperKey, cfg.hyperevm.omnibus);
+const evm = new HyperEvmSide(cfg.hyperevm.rpcUrl, cfg.hyperevm.keeperKey, cfg.hyperevm.omnibus, {
+  usdc: cfg.hyperevm.usdc,
+  coreDepositWallet: cfg.hyperevm.coreDepositWallet,
+});
 const state = loadState(cfg.stateFile, () => emptyState(cfg.starknet.startBlock, cfg.hyperevm.startBlock));
 const relay = cfg.relay
   ? new Relay(sn, evm, {
@@ -36,7 +39,7 @@ const relay = cfg.relay
 const keeper = new Keeper(
   sn,
   evm,
-  new HyperliquidApi(cfg.hlApiUrl),
+  new HyperliquidApi(cfg.hlApiUrl, { wallet: evm.wallet, isMainnet: cfg.network === "mainnet" }),
   new IrisApi(cfg.irisApiUrl),
   Keeper.exchangeFor(sn, cfg.proverEndpoint, cfg.starknet.rpcUrl, cfg.proverMaster),
   state,

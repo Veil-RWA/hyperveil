@@ -73,6 +73,8 @@ fn relayer() -> ContractAddress { 0xF0.try_into().unwrap() }
 
 const HL_EID: u32 = 30367;
 const OMNIBUS: u256 = 0x1111111111111111111111111111111111111111;
+/// The keeper's HyperEVM address: where Circle mints a deposit's USDC.
+const KEEPER_EVM: u256 = 0x2222222222222222222222222222222222222222;
 const HYPE: u64 = 150;
 const LZ_FEE: u256 = 1_000;
 const GAS: u128 = 250_000;
@@ -146,6 +148,7 @@ fn setup() -> Env {
         "HyperVeilEntryHelper",
         array![
             gateway.into(), usdc.into(), messenger.into(), OMNIBUS.low.into(), OMNIBUS.high.into(),
+            KEEPER_EVM.low.into(), KEEPER_EVM.high.into(),
         ],
     );
     let fee = deploy("HyperVeilFeeAdapter", array![gateway.into()]);
@@ -379,12 +382,13 @@ fn a_deposit_is_one_proven_invoke_that_burns_usdc_through_cctp_and_tells_the_omn
     let msg = to_hyperliquid(env, twin_note, AMOUNT6);
     let deposit_id = deposit_id_of(env, twin_note);
 
-    // The value: burned through CCTP to the omnibus, only it may relay.
+    // The value: burned through CCTP, minted to the keeper, only the omnibus
+    // may relay.
     let burn = env.messenger.last_burn();
     assert(burn.caller == env.helper, 'burn caller');
     assert(burn.amount == AMOUNT6.into(), 'burn amount');
     assert(burn.destination_domain == HYPEREVM_DOMAIN, 'burn domain');
-    assert(burn.mint_recipient == OMNIBUS, 'mint recipient');
+    assert(burn.mint_recipient == KEEPER_EVM, 'mint recipient');
     assert(burn.destination_caller == OMNIBUS, 'destination caller');
     assert(burn.burn_token == env.usdc, 'burn token');
     let mut expected_hook: ByteArray = Default::default();

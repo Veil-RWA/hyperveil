@@ -54,7 +54,10 @@ export async function handler(): Promise<{ ok: boolean; skipped?: string; log: s
       cfg.starknet.strk,
       cfg.starknet.permissionManager,
     );
-    const evm = new HyperEvmSide(cfg.hyperevm.rpcUrl, cfg.hyperevm.keeperKey, cfg.hyperevm.omnibus);
+    const evm = new HyperEvmSide(cfg.hyperevm.rpcUrl, cfg.hyperevm.keeperKey, cfg.hyperevm.omnibus, {
+      usdc: cfg.hyperevm.usdc,
+      coreDepositWallet: cfg.hyperevm.coreDepositWallet,
+    });
     const state = await store.load(() => emptyState(cfg.starknet.startBlock, cfg.hyperevm.startBlock));
     const relay = cfg.relay
       ? new Relay(
@@ -71,7 +74,7 @@ export async function handler(): Promise<{ ok: boolean; skipped?: string; log: s
     const keeper = new Keeper(
       sn,
       evm,
-      new HyperliquidApi(cfg.hlApiUrl),
+      new HyperliquidApi(cfg.hlApiUrl, { wallet: evm.wallet, isMainnet: cfg.network === "mainnet" }),
       new IrisApi(cfg.irisApiUrl),
       Keeper.exchangeFor(sn, cfg.proverEndpoint, cfg.starknet.rpcUrl, cfg.proverMaster),
       state,

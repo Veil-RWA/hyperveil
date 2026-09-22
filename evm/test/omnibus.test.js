@@ -59,13 +59,14 @@ function fillMsg(items) {
   return out;
 }
 
-// Circle's CCTP V2 burn message from Starknet (domain 25) to this omnibus.
+// Circle's CCTP V2 burn message from Starknet (domain 25): minted to the
+// keeper, relayed only by this omnibus.
 function cctpMsg({ omnibus, sender = ENTRY_HELPER, domain = 25, caller, recipient, amount6, fee = 0n, hook }) {
   return packed(
     ['uint32', 'uint32', 'uint32', 'bytes32', 'bytes32', 'bytes32', 'bytes32', 'uint32', 'uint32',
       'uint32', 'bytes32', 'bytes32', 'uint256', 'bytes32', 'uint256', 'uint256', 'uint256', 'bytes32'],
     [1, domain, 19, B32(0x99), B32(0x07d4), B32(0x28b5), caller ?? word(omnibus), 2000, 2000,
-      1, B32(0x0330), recipient ?? word(omnibus), amount6, sender, 0, fee, 0, hook]
+      1, B32(0x0330), recipient ?? word(addr(KEEPER)), amount6, sender, 0, fee, 0, hook]
   );
 }
 
@@ -82,7 +83,7 @@ async function setup() {
   const wallet = await chain.deploy('MockCoreDepositWallet', [usdc.hex, spotBalance.hex]);
   const endpoint = await chain.deploy('MockEndpoint');
   const omnibus = await chain.deploy('HyperVeilOmnibus', [
-    endpoint.hex, addr(OWNER), SN_EID, usdc.hex, messenger.hex, transmitter.hex, wallet.hex,
+    endpoint.hex, addr(OWNER), SN_EID, usdc.hex, messenger.hex, transmitter.hex,
   ]);
   succeeds(await omnibus.call('setPeer', [SN_EID, GATEWAY], OWNER));
   succeeds(await omnibus.call('setKeeper', [addr(KEEPER)], OWNER));
@@ -111,28 +112,38 @@ async function actionCount(env) {
   return (await env.coreWriter.call('actionCount')).decoded[0];
 }
 
-// A full deposit: the LayerZero instruction, the CCTP USDC, then the credit.
+// What the keeper does with a deposit Circle minted to it: moves it to
+// HyperCore and spot-sends it to the omnibus's account.
+const keeperSpotSends = (env, amount8) => env.spotBalance.call('credit', [env.omnibus.hex, USDC, amount8]);
+
+// A full deposit: the LayerZero instruction, the CCTP USDC, the keeper's spot
+// send, then the credit.
 const DEPOSIT_ID = B32(0xd1);
 const DEPOSIT6 = 1_000_000_000n; // 1_000 USDC
 async function deposited(env, id = DEPOSIT_ID, amount6 = DEPOSIT6) {
   succeeds(await deliver(env, depositMsg(id, amount6)), 'deposit instruction');
   const m = cctpMsg({ omnibus: env.omnibus.hex, amount6, hook: id });
   succeeds(await env.omnibus.call('receiveDeposit', [m, ethers.toUtf8Bytes('ATTESTED')], STRANGER), 'cctp');
+  await keeperSpotSends(env, amount6 * 100n);
   succeeds(await env.omnibus.call('creditDeposit', [id], STRANGER), 'credit');
 }
 
 // ── Deposits ────────────────────────────────────────────────────────────────
 
-test('a deposit is credited once both its instruction and its USDC arrived on HyperCore', async () => {
+test('a deposit is credited once its instruction arrived and the keeper spot-sent its USDC', async () => {
   const env = await setup();
   succeeds(await deliver(env, depositMsg(DEPOSIT_ID, DEPOSIT6)));
   const m = cctpMsg({ omnibus: env.omnibus.hex, amount6: DEPOSIT6, fee: 100_000n, hook: DEPOSIT_ID });
   succeeds(await env.omnibus.call('receiveDeposit', [m, ethers.toUtf8Bytes('ATTESTED')], STRANGER));
-  // Moved on to HyperCore spot at once: nothing is left on the EVM.
-  eq((await env.usdc.call('balanceOf', [env.omnibus.hex])).decoded[0], 0n);
+  // Circle minted to the keeper; the omnibus recorded what was minted.
   const arrived = DEPOSIT6 - 100_000n;
-  eq((await env.spotBalance.call('total', [env.omnibus.hex, USDC])).decoded[0], arrived * 100n);
+  eq((await env.usdc.call('balanceOf', [addr(KEEPER)])).decoded[0], arrived);
+  eq((await env.usdc.call('balanceOf', [env.omnibus.hex])).decoded[0], 0n);
+  eq((await env.omnibus.call('deposits', [DEPOSIT_ID])).decoded[1], arrived);
+  // Not on HyperCore yet: no credit.
+  reverts(await env.omnibus.call('creditDeposit', [DEPOSIT_ID], STRANGER), 'Insolvent');
 
+  await keeperSpotSends(env, arrived * 100n);
   succeeds(await env.omnibus.call('creditDeposit', [DEPOSIT_ID], STRANGER));
   eq(await liability(env, USDC), arrived * 100n);
   eq(await lastMessage(env), creditMsg(DEPOSIT_ID, arrived * 100n));
@@ -163,18 +174,19 @@ test('a credit HyperCore does not back is refused', async () => {
   succeeds(await deliver(env, depositMsg(DEPOSIT_ID, DEPOSIT6)));
   const m = cctpMsg({ omnibus: env.omnibus.hex, amount6: DEPOSIT6, hook: DEPOSIT_ID });
   succeeds(await env.omnibus.call('receiveDeposit', [m, ethers.toUtf8Bytes('ATTESTED')], STRANGER));
-  // HyperCore never credited the account (say the deposit was rejected there).
-  await env.spotBalance.call('set', [env.omnibus.hex, USDC, 0]);
+  // The keeper sent less than was minted (or nothing at all).
+  await keeperSpotSends(env, DEPOSIT6 * 100n - 1n);
   reverts(await env.omnibus.call('creditDeposit', [DEPOSIT_ID], STRANGER), 'Insolvent');
 });
 
-test('only the entry helper deposits, from Starknet, to this omnibus, for itself to relay', async () => {
+test('only the entry helper deposits, from Starknet, to an address, for this omnibus to relay', async () => {
   const env = await setup();
   const base = { omnibus: env.omnibus.hex, amount6: DEPOSIT6, hook: DEPOSIT_ID };
   const call = (m) => env.omnibus.call('receiveDeposit', [m, ethers.toUtf8Bytes('ATTESTED')], STRANGER);
   reverts(await call(cctpMsg({ ...base, sender: B32(0xbad) })), 'BadCctpMessage');
   reverts(await call(cctpMsg({ ...base, domain: 0 })), 'BadCctpMessage');
-  reverts(await call(cctpMsg({ ...base, recipient: B32(0xbad) })), 'BadCctpMessage');
+  reverts(await call(cctpMsg({ ...base, recipient: B32(0) })), 'BadCctpMessage');
+  reverts(await call(cctpMsg({ ...base, recipient: B32(1n << 160n) })), 'BadCctpMessage');
   reverts(await call(cctpMsg({ ...base, caller: B32(0) })), 'BadCctpMessage');
 });
 

@@ -5,7 +5,7 @@ import {OAppLite} from "./lz/OAppLite.sol";
 import {Origin} from "./lz/ILayerZeroEndpointV2.sol";
 import {HyperVeilCodec as Codec} from "./HyperVeilCodec.sol";
 import {HyperCore} from "./hyperliquid/HyperCore.sol";
-import {IERC20, ITokenMessengerV2, IMessageTransmitterV2, ICoreDepositWallet} from "./cctp/ICctp.sol";
+import {IERC20, ITokenMessengerV2, IMessageTransmitterV2} from "./cctp/ICctp.sol";
 
 /// HyperVeil's omnibus: one HyperEVM contract whose HyperCore account holds
 /// every asset behind HyperVeil's Starknet twins and trades them on HyperCore's
@@ -21,8 +21,8 @@ import {IERC20, ITokenMessengerV2, IMessageTransmitterV2, ICoreDepositWallet} fr
 ///
 /// Instructions (Starknet -> here, over LayerZero):
 ///   DEPOSIT   a deposit's instruction. Credited only once the matching CCTP
-///             USDC has arrived too (`receiveDeposit`) and reached HyperCore
-///             (`creditDeposit`, a later block).
+///             USDC has been minted too (`receiveDeposit`, to the keeper) and
+///             the keeper has spot-sent it to this account (`creditDeposit`).
 ///   PLACE     a Veil order's escrow, to be placed as a spot limit order. The
 ///             order is checked against the Veil order's own terms first: the
 ///             pair, the escrow and the maker's limit price at the worst fee
@@ -38,8 +38,9 @@ import {IERC20, ITokenMessengerV2, IMessageTransmitterV2, ICoreDepositWallet} fr
 /// keeper is bounded, not trusted: a report cannot draw more than the escrow,
 /// cannot beat the maker's limit price, and cannot leave any token insolvent.
 /// It can delay; it can misattribute between concurrent routes of one token
-/// (the balance check is per token, not per route); it cannot mint a twin this
-/// account does not hold.
+/// (the balance check is per token, not per route); it holds a deposit's USDC
+/// between Circle's mint and its spot send here, so it can withhold one; it
+/// cannot mint a twin this account does not hold.
 ///
 /// Fees: the Starknet user pays. Each instruction arrives with HYPE (LayerZero
 /// executor value) that is kept as that id's `budget` and pays its replies and
@@ -72,7 +73,6 @@ contract HyperVeilOmnibus is OAppLite {
     IERC20 public immutable usdc;
     ITokenMessengerV2 public immutable tokenMessenger;
     IMessageTransmitterV2 public immutable messageTransmitter;
-    ICoreDepositWallet public immutable coreDepositWallet;
 
     address public keeper;
     /// The Starknet entry helper: the only CCTP sender a deposit is accepted from.
@@ -179,18 +179,15 @@ contract HyperVeilOmnibus is OAppLite {
         uint32 starknetEid_,
         address usdc_,
         address tokenMessenger_,
-        address messageTransmitter_,
-        address coreDepositWallet_
+        address messageTransmitter_
     ) OAppLite(endpoint_, owner_) {
-        if (
-            usdc_ == address(0) || tokenMessenger_ == address(0) || messageTransmitter_ == address(0)
-                || coreDepositWallet_ == address(0)
-        ) revert ZeroAddress();
+        if (usdc_ == address(0) || tokenMessenger_ == address(0) || messageTransmitter_ == address(0)) {
+            revert ZeroAddress();
+        }
         starknetEid = starknetEid_;
         usdc = IERC20(usdc_);
         tokenMessenger = ITokenMessengerV2(tokenMessenger_);
         messageTransmitter = IMessageTransmitterV2(messageTransmitter_);
-        coreDepositWallet = ICoreDepositWallet(coreDepositWallet_);
     }
 
     /// Endpoint refunds land here; nothing is owed to anyone for them.
@@ -337,37 +334,39 @@ contract HyperVeilOmnibus is OAppLite {
     // ------------------------------------------------------------------ deposits
 
     /// Relays Circle's attested CCTP message for one deposit (anyone may; only
-    /// this contract can, as the message's destination caller) and moves the
-    /// USDC to this contract's HyperCore spot account.
+    /// this contract can, as the message's destination caller). Circle mints
+    /// the USDC to the keeper, the burn's mint recipient, who moves it to
+    /// HyperCore and spot-sends it to this contract's account. What is
+    /// recorded is what Circle minted, measured here, not the keeper's word;
+    /// `creditDeposit` then waits until HyperCore holds it.
     function receiveDeposit(bytes calldata message, bytes calldata attestation) external returns (bytes32 id) {
         bytes memory m = message;
         if (m.length != CCTP_HOOK_DATA + 32) revert BadCctpMessage("LENGTH");
         if (Codec.readUint(m, CCTP_SOURCE_DOMAIN, 4) != STARKNET_DOMAIN) revert BadCctpMessage("DOMAIN");
         bytes32 self_ = bytes32(uint256(uint160(address(this))));
         if (bytes32(Codec.readUint(m, CCTP_DESTINATION_CALLER, 32)) != self_) revert BadCctpMessage("CALLER");
-        if (bytes32(Codec.readUint(m, CCTP_MINT_RECIPIENT, 32)) != self_) revert BadCctpMessage("RECIPIENT");
         if (bytes32(Codec.readUint(m, CCTP_MESSAGE_SENDER, 32)) != entryHelper) revert BadCctpMessage("SENDER");
+        uint256 recipientWord = Codec.readUint(m, CCTP_MINT_RECIPIENT, 32);
+        if (recipientWord == 0 || recipientWord >> 160 != 0) revert BadCctpMessage("RECIPIENT");
+        address recipient = address(uint160(recipientWord));
         id = bytes32(Codec.readUint(m, CCTP_HOOK_DATA, 32));
         Deposit storage d = deposits[id];
         if (d.cctpSeen) revert DuplicateInstruction(id);
 
-        uint256 before = usdc.balanceOf(address(this));
+        uint256 before = usdc.balanceOf(recipient);
         require(messageTransmitter.receiveMessage(message, attestation), "HV_CCTP_RECEIVE");
-        uint256 arrived = usdc.balanceOf(address(this)) - before;
+        uint256 arrived = usdc.balanceOf(recipient) - before;
         if (arrived == 0 || arrived > type(uint128).max) revert BadCctpMessage("AMOUNT");
         d.cctpSeen = true;
         d.arrived6 = uint128(arrived);
         d.arrivedBlock = uint64(block.number);
-
-        usdc.approve(address(coreDepositWallet), arrived);
-        coreDepositWallet.deposit(arrived, HyperCore.SPOT_DEX);
         emit DepositArrived(id, arrived);
     }
 
-    /// Once both halves of a deposit are here and the USDC has reached
-    /// HyperCore (a later EVM block: precompiles read the state as of block
-    /// construction), credits the twin on Starknet. Anyone may call; the
-    /// deposit's budget pays.
+    /// Once both halves of a deposit are here and the keeper has spot-sent its
+    /// USDC to this account on HyperCore (the solvency check refuses the credit
+    /// until HyperCore holds it), credits the twin on Starknet. Anyone may
+    /// call; the deposit's budget pays.
     function creditDeposit(bytes32 id) external {
         Deposit storage d = deposits[id];
         if (!d.lzSeen || !d.cctpSeen || d.credited || block.number <= d.arrivedBlock) {
