@@ -47,6 +47,12 @@ function main() {
   const appFile = path.resolve(args.out || path.join(__dirname, '..', 'app', 'public', 'deployment.json'));
   const envFile = path.resolve(args['keeper-env'] || path.join(__dirname, '..', 'keeper', '.env'));
   const network_ = args.starknet.endsWith('mainnet') ? 'mainnet' : 'testnet';
+  // Keys already in the keeper's file survive a rewrite: this script is re-run
+  // every time an address changes, and blanking them would silently break the
+  // next `aws/deploy.sh` (and any running keeper restarted from this file).
+  // Read first, because the app's prover master falls back to it too.
+  const previous = readEnv(envFile);
+  const keep = (k) => previous[k] || '';
 
   step(1, 3, 'app: public/deployment.json');
   const app = {
@@ -77,7 +83,7 @@ function main() {
     prover: {
       endpoint: args.prover || process.env.PROVER_ENDPOINT || '',
       transport: args.transport || 'job',
-      masterAddress: args['prover-master'] || process.env.PROVER_MASTER || '',
+      masterAddress: args['prover-master'] || process.env.PROVER_MASTER || keep('VEIL_MASTER_ACCOUNT_ADDRESS'),
     },
     keeper: { intake: args.intake || process.env.HV_INTAKE_URL || '' },
     // Where the KYC service answers. Empty = none: the app then
@@ -117,11 +123,6 @@ function main() {
   if (!app.kyc.url) done('note', 'no KYC service URL configured');
 
   step(2, 3, 'keeper: .env');
-  // Keys already in the file survive a rewrite: this script is re-run every
-  // time an address changes, and blanking them would silently break the next
-  // `aws/deploy.sh` (and any running keeper restarted from this file).
-  const previous = readEnv(envFile);
-  const keep = (k) => previous[k] || '';
   const env = [
     '# HyperVeil keeper — written by scripts/write-config.js. Add the two keys.',
     `HV_NETWORK=${network_}`,
@@ -164,6 +165,12 @@ function main() {
           '# keeper account is the permission manager\'s whitelister. Refused',
           '# outright on mainnet.',
           `HV_OPEN_ALLOWLIST=${args['open-allowlist'] === false ? '0' : '1'}`,
+          '',
+          '# TESTNET ONLY: Circle credits an address at most 1,000 testnet USDC',
+          '# on HyperCore; past that, CoreDepositWallet deposits are taken on',
+          '# HyperEVM and never arrive. The keeper moves each deposit to the',
+          '# omnibus from its own HyperCore USDC instead. Refused on mainnet.',
+          `HV_CORE_FLOAT=${args['core-float'] === false ? '0' : '1'}`,
           '',
         ]
       : []),

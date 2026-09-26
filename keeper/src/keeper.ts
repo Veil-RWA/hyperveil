@@ -52,6 +52,10 @@ export interface KeeperParams {
   /** Where Circle's CoreDepositWallet puts a deposit in the keeper's HyperCore
    *  account on its way to the omnibus. Default perps. */
   coreDex?: CoreDex;
+  /** TESTNET ONLY: move a deposit to the omnibus from the keeper's own
+   *  HyperCore USDC rather than through Circle's CoreDepositWallet, whose
+   *  testnet credits stop at 1,000 USDC per address. See config.ts. */
+  coreFloat?: boolean;
 }
 
 const ORDER_OPEN = 0;
@@ -63,6 +67,14 @@ const ROUTE_OPEN = 1;
 const ROUTE_CLOSED = 2;
 const U128 = (1n << 128n) - 1n;
 const b32 = (v: bigint): string => "0x" + v.toString(16).padStart(64, "0");
+
+/** How long a deposit may sit in `bridging` before its HyperCore transfer is
+ *  re-sent against a fresh baseline. */
+/** A HyperCore transfer normally lands in seconds; three minutes means it is
+ *  not coming. */
+const DEPOSIT_STALL_MS = 3 * 60 * 1000;
+/** How many transfers to attempt before setting a deposit aside. */
+const DEPOSIT_ATTEMPTS = 2;
 
 export class Keeper {
   private pairs = new Map<string, SpotPair>();
@@ -468,7 +480,11 @@ export class Keeper {
       // Each deposit on its own: one that cannot move yet must not hold back
       // the ones behind it.
       try {
-        if (d.stage === "relayed" && busy) continue;
+        if (d.stage === "credited" || d.stage === "stalled") continue;
+        // `busy` guards the balance-delta test of a bridging deposit. A
+        // deposit moved from the float does not use that test, so it does
+        // not wait for one.
+        if (d.stage === "relayed" && busy && !this.params.coreFloat) continue;
         if (d.stage === "relayed" || d.stage === "bridging") busy = true;
         await this.relayDeposit(id, d);
       } catch (e) {
@@ -487,16 +503,54 @@ export class Keeper {
       d.amount6 = String(await this.evm.depositArrived(b32(BigInt(id))));
       d.stage = "relayed";
       this.log(`relayed deposit ${id}: ${d.amount6} USDC (6 dp) minted to the keeper`);
+    } else if (d.stage === "relayed" && this.params.coreFloat) {
+      // The deposit's USDC is on HyperEVM with the keeper (the omnibus measured
+      // its arrival); the keeper advances the same amount on HyperCore from
+      // its float. The omnibus still refuses the credit until HyperCore holds
+      // it, so nothing here is taken on trust.
+      const amount6 = BigInt(d.amount6 ?? (await this.evm.depositArrived(b32(BigInt(id)))));
+      d.amount6 = String(amount6);
+      const amount8 = amount6 * USDC_CORE_PER_CCTP_UNIT;
+      const float8 = await this.coreUsdc8(keeperOnCore, dex);
+      if (float8 < amount8) {
+        this.log(`deposit ${id}: the keeper's HyperCore float (${float8}) cannot cover ${amount8}; top it up`);
+        return;
+      }
+      if (dex === "perps") await this.hl.usdClassTransfer(amount8, false);
+      await this.hl.spotSendUsdc(this.evm.omnibusAddress, amount8);
+      d.stage = "sent";
+      this.log(`spot-sent deposit ${id} to the omnibus from the keeper's HyperCore float`);
     } else if (d.stage === "relayed") {
       const amount6 = BigInt(d.amount6 ?? (await this.evm.depositArrived(b32(BigInt(id)))));
       d.amount6 = String(amount6);
       d.baseline8 = String(await this.coreUsdc8(keeperOnCore, dex));
       const tx = await this.evm.toCore(amount6, dex);
       d.stage = "bridging";
+      d.since = Date.now();
+      d.attempts = (d.attempts ?? 0) + 1;
       this.log(`deposit ${id} into the keeper's HyperCore ${dex}: ${tx}`);
     } else if (d.stage === "bridging") {
       const amount8 = BigInt(d.amount6!) * USDC_CORE_PER_CCTP_UNIT;
-      if ((await this.coreUsdc8(keeperOnCore, dex)) < BigInt(d.baseline8!) + amount8) return;
+      if ((await this.coreUsdc8(keeperOnCore, dex)) < BigInt(d.baseline8!) + amount8) {
+        // The transfer normally lands within a block or two. When it does not,
+        // the usual cause is that it never went through — and because the
+        // arrival test is `balance >= baseline + amount`, a baseline read
+        // before a balance that later FELL can never be satisfied. Waiting
+        // forever would be bad enough on its own; it also holds `busy`, so
+        // every later deposit would queue behind this one for ever. So: retry
+        // the transfer against a fresh baseline, and after a few attempts set
+        // it aside rather than let it wedge the pipeline.
+        const waited = Date.now() - (d.since ?? 0);
+        if (waited < DEPOSIT_STALL_MS) return;
+        if ((d.attempts ?? 0) >= DEPOSIT_ATTEMPTS) {
+          d.stage = "stalled";
+          this.log(`deposit ${id} STALLED after ${d.attempts} transfers; set aside so the queue drains`);
+          return;
+        }
+        this.log(`deposit ${id} has not arrived on HyperCore in ${Math.round(waited / 1000)}s; re-sending`);
+        d.stage = "relayed";
+        return;
+      }
       if (dex === "perps") await this.hl.usdClassTransfer(amount8, false);
       await this.hl.spotSendUsdc(this.evm.omnibusAddress, amount8);
       d.stage = "sent";

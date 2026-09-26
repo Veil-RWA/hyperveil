@@ -141,6 +141,23 @@ async function main() {
     done('skipped', 'no omnibus yet: deploy it, then re-run this script');
     deferred.push('the whole omnibus side, and the gateway\'s peer');
   } else {
+  // The endpoint is fixed at deployment, so a wrong one cannot be wired
+  // around — only redeployed. On testnet it must be the relay endpoint:
+  // LayerZero's own has no pathway to Starknet, and an omnibus on it refuses
+  // every relayed message with OnlyEndpoint().
+  const endpointNow = await omnibus.endpoint();
+  const endpointWant = d.evm.relayEndpoint || evmNet.endpoint;
+  if (same(endpointNow, endpointWant)) {
+    done('endpoint', d.evm.relayEndpoint ? 'the relay endpoint' : 'LayerZero');
+  } else {
+    done('endpoint', `WRONG: ${endpointNow}, expected ${endpointWant}`);
+    throw new Error(
+      'the omnibus trusts the wrong endpoint, so no message from Starknet can reach it.\n' +
+      '  It cannot be rewired: delete evm.omnibus, starknet.entryHelper and starknet.exitVault\n' +
+      '  from the deployment file and redeploy (deploy-hyperevm.js, then deploy-starknet.js).',
+    );
+  }
+
   const gatewayWord = word(gateway);
   if (same(await omnibus.peers(d.starknetEid), gatewayWord)) done('peer', 'set');
   else await evmDo('setPeer', () => omnibus.setPeer(d.starknetEid, gatewayWord));

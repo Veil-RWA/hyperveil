@@ -139,6 +139,96 @@ test("a deposit that cannot be credited does not block the next one", async () =
   assert.ok(w.log.some((l) => l.startsWith(`[deposits] ${FIRST}:`)));
 });
 
+test("a deposit whose HyperCore transfer never lands is re-sent, then set aside so the queue drains", async () => {
+  // Found on testnet: a deposit sat in `bridging` for days because its
+  // transfer never landed, and since one deposit bridges at a time, every
+  // deposit behind it waited too.
+  const w = world();
+  const LONG_AGO = Date.now() - 4 * 60 * 1000;
+  w.state.deposits[FIRST] = {
+    burnTx: "0xaa", stage: "bridging", amount6: String(AMOUNT6),
+    baseline8: String(960_00000000n), since: LONG_AGO, attempts: 1,
+  };
+  w.state.deposits[SECOND] = { burnTx: "0xbb", stage: "relayed", amount6: String(AMOUNT6) };
+
+  // Waited too long: re-send against a fresh baseline.
+  await w.keeper.relayDeposits();
+  assert.equal(w.state.deposits[FIRST].stage, "relayed");
+  assert.ok(w.log.some((l) => l.includes("re-sending")));
+
+  await w.keeper.relayDeposits();
+  assert.equal(w.state.deposits[FIRST].stage, "bridging");
+  assert.equal(w.state.deposits[FIRST].attempts, 2);
+  assert.equal(w.state.deposits[SECOND].stage, "relayed");
+
+  // It still does not land: out of attempts, set aside.
+  w.state.deposits[FIRST].since = LONG_AGO;
+  await w.keeper.relayDeposits();
+  assert.equal(w.state.deposits[FIRST].stage, "stalled");
+  assert.ok(w.log.some((l) => l.includes("STALLED")));
+
+  // And the one behind it finally moves.
+  w.calls.length = 0;
+  await w.keeper.relayDeposits();
+  assert.equal(w.state.deposits[SECOND].stage, "bridging");
+  assert.deepEqual(w.calls, [`toCore ${AMOUNT6} perps`]);
+});
+
+test("a deposit still inside its window keeps waiting quietly", async () => {
+  const w = world();
+  w.state.deposits[FIRST] = {
+    burnTx: "0xaa", stage: "bridging", amount6: String(AMOUNT6),
+    baseline8: String(960_00000000n), since: Date.now(), attempts: 1,
+  };
+  await w.keeper.relayDeposits();
+  assert.equal(w.state.deposits[FIRST].stage, "bridging");
+  assert.deepEqual(w.calls, []);
+});
+
+test("testnet float: a relayed deposit goes to the omnibus from the keeper's HyperCore USDC", async () => {
+  // Circle stops crediting an address on HyperCore testnet after 1,000 USDC,
+  // so the CoreDepositWallet hop never lands; the float path skips it.
+  const w = world({ coreFloat: true });
+  w.state.deposits[FIRST] = { burnTx: "0xaa", stage: "relayed", amount6: String(AMOUNT6) };
+  await w.keeper.relayDeposits();
+  assert.equal(w.state.deposits[FIRST].stage, "sent");
+  assert.deepEqual(w.calls, [
+    `usdClassTransfer ${AMOUNT6 * 100n} toPerp=false`,
+    `spotSend ${OMNIBUS} ${AMOUNT6 * 100n}`,
+  ]);
+  await w.keeper.relayDeposits();
+  assert.equal(w.state.deposits[FIRST].stage, "credited");
+});
+
+test("testnet float: a float that cannot cover the deposit waits, and says so", async () => {
+  const w = world({ coreFloat: true });
+  w.core.perps = 1_00000000n; // 1 USDC
+  w.state.deposits[FIRST] = { burnTx: "0xaa", stage: "relayed", amount6: String(AMOUNT6) };
+  await w.keeper.relayDeposits();
+  assert.equal(w.state.deposits[FIRST].stage, "relayed");
+  assert.deepEqual(w.calls, []);
+  assert.ok(w.log.some((l) => l.includes("top it up")));
+});
+
+test("testnet float: a deposit does not queue behind one still bridging", async () => {
+  const w = world({ coreFloat: true });
+  w.state.deposits[FIRST] = {
+    burnTx: "0xaa", stage: "bridging", amount6: String(AMOUNT6),
+    baseline8: String(960_00000000n), since: Date.now(), attempts: 1,
+  };
+  w.state.deposits[SECOND] = { burnTx: "0xbb", stage: "relayed", amount6: String(AMOUNT6) };
+  await w.keeper.relayDeposits();
+  assert.equal(w.state.deposits[SECOND].stage, "sent");
+});
+
+test("HV_CORE_FLOAT is refused on mainnet", async () => {
+  const { loadConfig } = await import("../src/config.js");
+  assert.throws(
+    () => loadConfig({ HV_NETWORK: "mainnet", HV_CORE_FLOAT: "1" } as never),
+    /HV_CORE_FLOAT is testnet only/,
+  );
+});
+
 test("an exit not paid out yet does not block the next one", async () => {
   const w = world();
   w.state.exits[FIRST] = { stage: "requested" };

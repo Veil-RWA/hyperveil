@@ -162,6 +162,11 @@ async function main() {
   // endpoint the keeper drives, because LayerZero has no pathway between these
   // two testnets. The gateway is unchanged either way.
   let endpointAddress = net.endpoint;
+  // Same guard as deploy-hyperevm.js: a relay deployment stays a relay one.
+  if (!args.relay && !args.starknet.endsWith('mainnet') && d.starknet.relayEndpoint) {
+    args.relay = true;
+    console.log('relay mode   ON (this deployment already has a relay endpoint)');
+  }
   if (args.relay) {
     if (args.starknet.endsWith('mainnet')) throw new Error('--relay is testnet only');
     if (!d.starknet.relayEndpoint) {

@@ -60,6 +60,18 @@ function openAllowlist(env: NodeJS.ProcessEnv, network: string): boolean {
   return true;
 }
 
+/** `HV_CORE_FLOAT=1`: deposits reach the omnibus from the keeper's own
+ *  HyperCore USDC instead of through Circle's CoreDepositWallet. TESTNET ONLY:
+ *  Circle credits an address at most 1,000 testnet USDC on HyperCore, after
+ *  which every CoreDepositWallet deposit to it is taken on HyperEVM and
+ *  silently never arrives (confirmed with Circle support and on-chain,
+ *  2026-09-26). On mainnet there is no cap, and the flag is refused. */
+function coreFloat(env: NodeJS.ProcessEnv, network: string): boolean {
+  if (env.HV_CORE_FLOAT !== "1") return false;
+  if (network === "mainnet") throw new Error("HV_CORE_FLOAT is testnet only");
+  return true;
+}
+
 /** `HV_CORE_DEX`: where Circle's CoreDepositWallet puts a deposit in the
  *  keeper's HyperCore account before the spot send (default perps). */
 function coreDex(env: NodeJS.ProcessEnv): CoreDex {
@@ -81,6 +93,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): KeeperConfig {
   const network = (env.HV_NETWORK ?? "testnet") as "mainnet" | "testnet";
   if (network !== "mainnet" && network !== "testnet") throw new Error("HV_NETWORK must be mainnet or testnet");
   const open = openAllowlist(env, network);
+  const float = coreFloat(env, network);
   return {
     network,
     starknet: {
@@ -126,6 +139,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): KeeperConfig {
       maxLogWindows: Number(env.HV_MAX_LOG_WINDOWS ?? 20),
       openAllowlist: open,
       coreDex: coreDex(env),
+      coreFloat: float,
     },
     pollMs: Number(env.HV_POLL_MS ?? 5_000),
     stateFile: env.HV_STATE_FILE ?? "keeper-state.json",

@@ -23,3 +23,8 @@ app/src/kyc.ts
 # Superseded deployment records, kept locally as history.
 deployments/*.pre-*.json
 deployments/pre-*.json
+
+# The end-to-end driver's cached viewing key: it reads the account's private
+# notes. And its node_modules, a symlink the directory pattern above misses.
+e2e/.viewing-key.json
+e2e/node_modules

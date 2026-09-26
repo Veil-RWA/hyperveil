@@ -37,6 +37,14 @@ async function main() {
   const provider = evmProvider(rpc);
   const wallet = new ethers.Wallet(key, provider);
   const d = loadDeployment(args);
+  // A deployment that already runs through the relay stays on it. Forgetting
+  // `--relay` once put an omnibus on LayerZero's endpoint, which has no
+  // testnet pathway to Starknet: every message to it was refused with
+  // OnlyEndpoint(), and nothing on testnet worked (2026-09-26).
+  if (!args.relay && !isMainnet && d.evm.relayEndpoint) {
+    args.relay = true;
+    console.log('relay mode   ON (this deployment already has a relay endpoint)');
+  }
 
   const chain = await provider.getNetwork();
   if (Number(chain.chainId) !== net.chainId) {

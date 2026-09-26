@@ -50,12 +50,19 @@ export interface DepositState {
    *  bridging: sent into the keeper's HyperCore account, which held
    *    `baseline8` just before; arrived once it holds `baseline8 + amount`.
    *  sent: spot-sent to the omnibus.
-   *  credited: the omnibus credited the twin. */
-  stage: "burned" | "relayed" | "bridging" | "sent" | "credited";
+   *  credited: the omnibus credited the twin.
+   *  stalled: bridging did not complete after several attempts. Kept for the
+   *    record, and deliberately does NOT hold the queue: a deposit whose
+   *    HyperCore transfer never lands must not stop every deposit behind it. */
+  stage: "burned" | "relayed" | "bridging" | "sent" | "credited" | "stalled";
   /** What Circle minted, 6 dp (a decimal string: the state is JSON). */
   amount6?: string;
   /** The keeper's HyperCore USDC (8 dp) just before this deposit went in. */
   baseline8?: string;
+  /** When this deposit entered `bridging` (ms). Used to notice a stall. */
+  since?: number;
+  /** How many times the HyperCore transfer has been re-sent. */
+  attempts?: number;
 }
 
 export interface ExitState {
