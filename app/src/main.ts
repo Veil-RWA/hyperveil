@@ -34,9 +34,8 @@ function renderNav(): void {
   const el = document.getElementById("nav-right")!;
   const net = `<span class="chip">${deployment().network === "testnet" ? "Testnet" : "Mainnet"}</span>`;
   if (!S.session) {
-    el.innerHTML = `${net}<button class="btn btn-gold" id="nav-connect">Connect Starknet wallet</button><button class="btn btn-ghost" id="nav-connect-evm">Connect EVM wallet</button>`;
+    el.innerHTML = `${net}<button class="btn btn-gold" id="nav-connect">Connect wallet</button>`;
     document.getElementById("nav-connect")!.addEventListener("click", () => void connect());
-    document.getElementById("nav-connect-evm")!.addEventListener("click", () => void connect("evm"));
     return;
   }
   const kyc =

@@ -109,10 +109,9 @@ let exitRecords = new Map<string, ExitRecord>();
 function gate(root: HTMLElement): boolean {
   if (S.session) return false;
   root.querySelectorAll<HTMLElement>(".form-slot").forEach((el) => {
-    el.innerHTML = `<div class="gate"><p>Connect a Starknet wallet or an EVM wallet.</p><button class="btn btn-gold" id="fd-connect">Connect Starknet wallet</button> <button class="btn btn-ghost" id="fd-connect-evm">Connect EVM wallet</button></div>`;
+    el.innerHTML = `<div class="gate"><p>Connect a Starknet wallet or an EVM wallet.</p><button class="btn btn-gold" id="fd-connect">Connect wallet</button></div>`;
   });
   $("fd-connect").addEventListener("click", () => void connect());
-  $("fd-connect-evm").addEventListener("click", () => void connect("evm"));
   return true;
 }
 

@@ -202,9 +202,49 @@ async function attach(session: Session, prompt: boolean): Promise<void> {
   void refreshAccount();
 }
 
-/** Connects a Starknet wallet, or (`"evm"`) an EVM wallet that holds its
- *  notes as itself. */
-export async function connect(kind: "starknet" | "evm" = "starknet"): Promise<void> {
+/** Asks which kind of wallet to connect: a Starknet wallet, or an EVM wallet
+ *  that holds its notes as itself (no Starknet account). */
+function chooseWallet(): Promise<"starknet" | "evm" | null> {
+  return new Promise((resolve) => {
+    const overlay = document.createElement("div");
+    overlay.className = "modal-overlay";
+    overlay.innerHTML = `
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="wc-title">
+        <h2 id="wc-title">Connect a wallet</h2>
+        <button class="wallet-option" data-kind="starknet">
+          <span class="wallet-option-name">Starknet wallet</span>
+          <span class="wallet-option-hint">Argent, Braavos</span>
+        </button>
+        <button class="wallet-option" data-kind="evm">
+          <span class="wallet-option-name">EVM wallet</span>
+          <span class="wallet-option-hint">MetaMask or any Ethereum wallet · no Starknet account needed</span>
+        </button>
+      </div>`;
+    const close = (kind: "starknet" | "evm" | null) => {
+      document.removeEventListener("keydown", onKey);
+      overlay.remove();
+      resolve(kind);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") close(null);
+    };
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) close(null);
+    });
+    overlay.querySelectorAll<HTMLButtonElement>(".wallet-option").forEach((b) =>
+      b.addEventListener("click", () => close(b.dataset.kind as "starknet" | "evm")),
+    );
+    document.addEventListener("keydown", onKey);
+    document.body.appendChild(overlay);
+    overlay.querySelector<HTMLButtonElement>(".wallet-option")?.focus();
+  });
+}
+
+/** Connects a wallet: asks which kind, unless `kind` says. */
+export async function connect(kind?: "starknet" | "evm"): Promise<void> {
+  const chosen = kind ?? (await chooseWallet());
+  if (!chosen) return;
+  kind = chosen;
   try {
     await attach(kind === "evm" ? await connectEvmWallet() : await connectWallet(), true);
   } catch (e) {
