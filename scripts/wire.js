@@ -275,6 +275,8 @@ async function main() {
     ...(d.starknet.entryHelper ? [['entry helper', d.starknet.entryHelper]] : []),
     ...(d.starknet.exitVault ? [['exit vault', d.starknet.exitVault]] : []),
     ...(d.starknet.strk20Entry ? [['strk20 entry', d.starknet.strk20Entry]] : []),
+    ...(d.starknet.cashVault ? [['cash vault', d.starknet.cashVault]] : []),
+    ...(d.starknet.cashExit ? [['cash exit', d.starknet.cashExit]] : []),
   ];
   for (const [label, address] of adapters) {
     const allowed = (await snCall(snProvider, pool, 'is_adapter_allowed', [address]))[0];
@@ -290,6 +292,25 @@ async function main() {
   }
 
   // ── 4. KYC ────────────────────────────────────────────────────────────────
+  // Direct access: deposit / withdraw stay closed for the pool, open for USDC
+  // alone. The twins and STRK only ever move through adapters.
+  if (BigInt((await snCall(snProvider, pool, 'is_direct_access_enabled'))[0]) === 1n) {
+    await snDo('set_direct_access closed', pool, 'set_direct_access', ['0']);
+  } else {
+    done('direct access', 'closed');
+  }
+  if (BigInt((await snCall(snProvider, pool, 'is_token_direct_access_enabled', [d.starknet.usdc]))[0]) === 1n) {
+    done('USDC direct access', 'open');
+  } else {
+    await snDo('set_token_direct_access USDC', pool, 'set_token_direct_access', [d.starknet.usdc, '1']);
+  }
+  // The class that checks an EVM wallet's signature.
+  if (d.classes?.VeilEvmVerifier) {
+    const current = (await snCall(snProvider, pool, 'get_evm_verifier'))[0];
+    if (same(current, d.classes.VeilEvmVerifier)) done('EVM verifier', 'set');
+    else await snDo('set_evm_verifier', pool, 'set_evm_verifier', [d.classes.VeilEvmVerifier]);
+  }
+
   step(4, 5, 'KYC list (the contracts that must hold a token for an instant)');
   // The pool holds every token; the gateway, entry helper and fee adapter are
   // paid one for the length of a call. The exit vault and the STRK20 entry
@@ -299,6 +320,7 @@ async function main() {
     ['gateway', gateway],
     ['fee adapter', d.starknet.feeAdapter],
     ...(d.starknet.entryHelper ? [['entry helper', d.starknet.entryHelper]] : []),
+    ...(d.starknet.cashExit ? [['cash exit', d.starknet.cashExit]] : []),
   ];
   const missing = [];
   for (const [label, address] of holders) {

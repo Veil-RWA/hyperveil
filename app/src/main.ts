@@ -34,8 +34,9 @@ function renderNav(): void {
   const el = document.getElementById("nav-right")!;
   const net = `<span class="chip">${deployment().network === "testnet" ? "Testnet" : "Mainnet"}</span>`;
   if (!S.session) {
-    el.innerHTML = `${net}<button class="btn btn-gold" id="nav-connect">Connect wallet</button>`;
+    el.innerHTML = `${net}<button class="btn btn-gold" id="nav-connect">Connect Starknet wallet</button><button class="btn btn-ghost" id="nav-connect-evm">Connect EVM wallet</button>`;
     document.getElementById("nav-connect")!.addEventListener("click", () => void connect());
+    document.getElementById("nav-connect-evm")!.addEventListener("click", () => void connect("evm"));
     return;
   }
   const kyc =
@@ -47,11 +48,11 @@ function renderNav(): void {
   // Testnet: USDC is the first thing a new wallet needs, so the way to get
   // some lives in the header rather than inside a form. It is Circle's own
   // faucet — the only USDC that CCTP will carry to Hyperliquid.
-  const faucet = hasTestnetFaucet()
+  const faucet = hasTestnetFaucet() && S.session.kind !== "evm"
     ? `<a class="btn btn-gold" id="nav-faucet" href="${CIRCLE_FAUCET}" target="_blank" rel="noopener noreferrer">Claim USDC faucet</a>`
     : "";
   el.innerHTML = `${net}${kyc}${faucet}
-    <button class="btn btn-ghost" id="nav-account" title="Disconnect">${escapeHtml(short(S.session.address))}</button>`;
+    ${S.session.kind === "evm" ? `<span class="chip">EVM</span>` : ""}<button class="btn btn-ghost" id="nav-account" title="Disconnect">${escapeHtml(short(S.session.address))}</button>`;
   document.getElementById("nav-account")!.addEventListener("click", () => void disconnect());
 }
 

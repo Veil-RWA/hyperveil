@@ -1,7 +1,10 @@
-// The Starknet wallet: discovery through get-starknet, then starknet.js's
-// `WalletAccountV6`, which also speaks the STRK20 wallet API
-// (`wallet_strk20InvokeTransaction`), used when value comes from a STRK20
-// balance.
+// The wallet: a Starknet account (get-starknet, then starknet.js's
+// `WalletAccountV6`, which also speaks the STRK20 wallet API), or an EVM wallet
+// (MetaMask and any EIP-1193 wallet). An EVM wallet holds its notes as itself:
+// its 20-byte address is the owner in the pool, it signs each proven action
+// with `personal_sign` (the pool checks the secp256k1 signature inside the
+// proof), and its USDC comes and goes over CCTP from Ethereum — it has no
+// Starknet account to send anything from.
 //
 // get-starknet v4 hands back the injected `StarknetWindowObject`;
 // `StarknetInjectedWallet` wraps it in the wallet-standard shape that
@@ -12,11 +15,24 @@ import "./noMetaMaskSnap";
 import { connect as pickWallet, disconnect as dropWallet } from "@starknet-io/get-starknet";
 import { StarknetInjectedWallet } from "@starknet-io/get-starknet-wallet-standard";
 import { RpcProvider, WalletAccountV6 } from "starknet";
+import { eip1193AuthorizationSigner, type AuthorizationSigner } from "veil-sdk";
 import { deployment } from "./config";
 
+/** An EIP-1193 provider (window.ethereum). */
+export interface Eip1193 {
+  request(args: { method: string; params?: unknown[] }): Promise<unknown>;
+}
+
 export interface Session {
+  kind: "starknet" | "evm";
+  /** The holder: the Starknet account, or the EVM address (0x + 40 hex). */
   address: string;
-  account: WalletAccountV6;
+  /** Starknet only: sends the wallet's own transactions. */
+  account?: WalletAccountV6;
+  /** EVM only: the wallet, for Ethereum transactions (CCTP). */
+  evm?: Eip1193;
+  /** Authorizes each proven action. */
+  signer: AuthorizationSigner;
   walletName: string;
 }
 
@@ -28,19 +44,21 @@ export function rpc(): RpcProvider {
 }
 
 const AUTOCONNECT = "hyperveil:autoconnect";
-const remember = (on: boolean): void => {
+/** Which wallet to re-attach on load: "1" (Starknet, as before) or "evm". */
+const remember = (kind: "starknet" | "evm" | null): void => {
   try {
-    if (on) localStorage.setItem(AUTOCONNECT, "1");
+    if (kind) localStorage.setItem(AUTOCONNECT, kind === "evm" ? "evm" : "1");
     else localStorage.removeItem(AUTOCONNECT);
   } catch {
     /* storage unavailable */
   }
 };
-const mayAutoConnect = (): boolean => {
+const autoConnectKind = (): "starknet" | "evm" | null => {
   try {
-    return localStorage.getItem(AUTOCONNECT) === "1";
+    const v = localStorage.getItem(AUTOCONNECT);
+    return v === "evm" ? "evm" : v === "1" ? "starknet" : null;
   } catch {
-    return false;
+    return null;
   }
 };
 
@@ -73,20 +91,60 @@ async function sessionFrom(injected: unknown, silent: boolean): Promise<Session>
     chain = w.chainId;
   }
   if (chain && !sameFelt(chain, deployment().starknet.chainId)) throw new WrongChainError(chain);
-  return { address: account.address, account, walletName: wallet.name };
+  return { kind: "starknet", address: account.address, account, signer: account as never, walletName: wallet.name };
 }
 
 export async function connectWallet(): Promise<Session> {
   const injected = await pickWallet({ modalMode: "alwaysAsk", modalTheme: "dark" });
   if (!injected) throw new Error("No wallet selected.");
   const session = await sessionFrom(injected, false);
-  remember(true);
+  remember("starknet");
   return session;
+}
+
+// ── EVM wallet ──────────────────────────────────────────────────────────────
+
+function ethereum(): Eip1193 {
+  const eth = (window as unknown as { ethereum?: Eip1193 }).ethereum;
+  if (!eth) throw new Error("No EVM wallet found. Install MetaMask (or another EVM wallet) and reload.");
+  return eth;
+}
+
+/** Puts the wallet on the Ethereum chain HyperVeil's USDC comes from. */
+export async function ensureEthereumChain(eth: Eip1193): Promise<void> {
+  const want = "0x" + deployment().ethereum.chainId.toString(16);
+  const have = String(await eth.request({ method: "eth_chainId" }));
+  if (BigInt(have) === BigInt(want)) return;
+  await eth.request({ method: "wallet_switchEthereumChain", params: [{ chainId: want }] });
+}
+
+function evmSession(eth: Eip1193, address: string): Session {
+  const a = "0x" + BigInt(address).toString(16).padStart(40, "0");
+  return { kind: "evm", address: a, evm: eth, signer: eip1193AuthorizationSigner(eth, a), walletName: "EVM wallet" };
+}
+
+export async function connectEvmWallet(): Promise<Session> {
+  const eth = ethereum();
+  const accounts = (await eth.request({ method: "eth_requestAccounts" })) as string[];
+  if (!accounts?.length) throw new Error("The EVM wallet did not return an account.");
+  await ensureEthereumChain(eth);
+  remember("evm");
+  return evmSession(eth, accounts[0]);
 }
 
 /** Re-attach an already-approved wallet after a reload, without a prompt. */
 export async function restoreWallet(): Promise<Session | undefined> {
-  if (!mayAutoConnect()) return undefined;
+  const kind = autoConnectKind();
+  if (!kind) return undefined;
+  if (kind === "evm") {
+    try {
+      const eth = ethereum();
+      const accounts = (await eth.request({ method: "eth_accounts" })) as string[];
+      return accounts?.length ? evmSession(eth, accounts[0]) : undefined;
+    } catch {
+      return undefined;
+    }
+  }
   for (let attempt = 0; attempt < 6; attempt++) {
     try {
       const injected = await pickWallet({ modalMode: "neverAsk" });
@@ -100,7 +158,9 @@ export async function restoreWallet(): Promise<Session | undefined> {
 }
 
 export async function disconnectWallet(): Promise<void> {
-  remember(false);
+  const wasEvm = autoConnectKind() === "evm";
+  remember(null);
+  if (wasEvm) return;
   try {
     await dropWallet({ clearLastWallet: true });
   } catch {
@@ -113,6 +173,7 @@ export async function disconnectWallet(): Promise<void> {
  *  deposit into the Veil pool. */
 export async function approve(session: Session, token: string, spender: string, amount: bigint): Promise<string> {
   const U128 = (1n << 128n) - 1n;
+  if (!session.account) throw new Error("An EVM wallet has no Starknet account: bring USDC from Ethereum instead.");
   const { transaction_hash } = await session.account.execute({
     contractAddress: token,
     entrypoint: "approve",

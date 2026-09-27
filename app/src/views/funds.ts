@@ -56,6 +56,18 @@ import { CIRCLE_FAUCET, deployment, hasTestnetFaucet, usdcTwin } from "../config
 import { ago, escapeHtml, hex, units } from "../format";
 import { submit } from "../strk20";
 import {
+  ETHEREUM_DOMAIN,
+  STARKNET_DOMAIN,
+  attestation,
+  burnToVeil,
+  ethereumUsdc,
+  etherscanTx,
+  mintOnEthereum,
+  relayToVeil,
+} from "../ethereum";
+import {
+  cashOut,
+  cctpMaxFee,
   createOpenNote,
   depositToHyperliquid,
   depositToVeil,
@@ -97,11 +109,15 @@ let exitRecords = new Map<string, ExitRecord>();
 function gate(root: HTMLElement): boolean {
   if (S.session) return false;
   root.querySelectorAll<HTMLElement>(".form-slot").forEach((el) => {
-    el.innerHTML = `<div class="gate"><p>Connect your Starknet wallet.</p><button class="btn btn-gold" id="fd-connect">Connect wallet</button></div>`;
+    el.innerHTML = `<div class="gate"><p>Connect a Starknet wallet or an EVM wallet.</p><button class="btn btn-gold" id="fd-connect">Connect Starknet wallet</button> <button class="btn btn-ghost" id="fd-connect-evm">Connect EVM wallet</button></div>`;
   });
   $("fd-connect").addEventListener("click", () => void connect());
+  $("fd-connect-evm").addEventListener("click", () => void connect("evm"));
   return true;
 }
+
+/** An EVM wallet: its USDC comes from, and goes back to, Ethereum over CCTP. */
+const isEvm = (): boolean => S.session?.kind === "evm";
 
 /** The user's private balance of a pool token, formatted. */
 function inVeil(token: string, decimals: number, places: number): string {
@@ -111,9 +127,27 @@ function inVeil(token: string, decimals: number, places: number): string {
 
 // ── Add USDC (or STRK) to Veil ──────────────────────────────────────────────
 
+function addPanelEvm(): string {
+  const d = deployment().starknet;
+  return `
+    <h2>Add USDC to your Veil balance</h2>
+    <div class="hint">From your EVM wallet on Ethereum${deployment().network === "testnet" ? " Sepolia" : ""}, over Circle's CCTP. No Starknet wallet needed.</div>
+    <label class="lbl" for="ad-amount">Amount</label>
+    <div class="field-wrap"><input class="field num" id="ad-amount" inputmode="decimal" placeholder="0.00" autocomplete="off" value="${escapeHtml(addValue)}" /><span class="field-unit">USDC</span></div>
+    <div class="summary num">
+      <div class="line"><span>On Ethereum</span><span id="ad-avail">…</span></div>
+      <div class="line"><span>In Veil now</span><span>${inVeil(d.usdc, 6, 2)} USDC</span></div>
+    </div>
+    <button class="btn btn-gold btn-block" id="ad-go" ${S.busy || !S.deployed || !d.cashVault ? "disabled" : ""}>Bring USDC from Ethereum</button>
+    <div class="hint">Your wallet approves and burns the USDC on Ethereum; Circle attests it (about 20 seconds, fast transfer) and it fills a private note in Veil. The amount and your address are public on Ethereum, as with any transfer.</div>`;
+}
+
 function addPanel(): string {
+  if (isEvm()) return addPanelEvm();
   const d = deployment().starknet;
   const strk20 = S.strk20;
+  // The pool takes STRK only through adapters (STRK20), never a plain deposit.
+  if (addToken === "strk") addSource = "strk20";
   const hasEntry = (() => {
     try {
       return BigInt(d.strk20Entry) !== 0n;
@@ -129,7 +163,7 @@ function addPanel(): string {
       <button class="tab ${addToken === "strk" ? "on" : ""}" data-add-token="strk">STRK (fees)</button>
     </div>
     <div class="tabs sm">
-      <button class="tab ${addSource === "wallet" ? "on" : ""}" data-add-source="wallet">From wallet</button>
+      <button class="tab ${addSource === "wallet" ? "on" : ""}" data-add-source="wallet" ${addToken === "strk" ? "disabled" : ""}>From wallet</button>
       <button class="tab ${addSource === "strk20" ? "on" : ""}" data-add-source="strk20" ${hasEntry ? "" : "disabled"}>From STRK20</button>
     </div>
     <label class="lbl" for="ad-amount">Amount</label>
@@ -174,13 +208,13 @@ function wireAddPanel(root: HTMLElement): void {
   const input = document.getElementById("ad-amount") as HTMLInputElement | null;
   input?.addEventListener("input", () => (addValue = input.value));
   document.getElementById("ad-avail")?.addEventListener("click", () => {
-    if (walletHeld === undefined || addSource !== "wallet" || !input) return;
-    const token = addPanelToken();
+    if (walletHeld === undefined || (addSource !== "wallet" && !isEvm()) || !input) return;
+    const token = isEvm() ? { decimals: 6, places: 2 } : addPanelToken();
     input.value = units(walletHeld, token.decimals, token.places).replace(/,/g, "");
     addValue = input.value;
   });
   document.getElementById("ad-go")?.addEventListener("click", () => void addToVeil(input?.value ?? ""));
-  if (addSource === "wallet" && S.session) void walletBalance();
+  if ((addSource === "wallet" || isEvm()) && S.session) void walletBalance();
 }
 
 /** What the connected wallet holds of the token the panel is on. */
@@ -200,7 +234,21 @@ function addPanelToken(): { address: string; decimals: number; places: number; s
 export async function walletBalance(): Promise<void> {
   const el = document.getElementById("ad-avail");
   const session = S.session;
-  if (!el || !session || addSource !== "wallet") return;
+  if (!el || !session) return;
+  if (session.kind === "evm") {
+    try {
+      const balance = await ethereumUsdc(session.address);
+      walletHeld = balance;
+      el.textContent = `${units(balance, 6, 2)} USDC`;
+      el.classList.add("link");
+      el.title = "Use all of it";
+    } catch (e) {
+      console.warn("ethereum balance", e);
+      el.textContent = "could not read";
+    }
+    return;
+  }
+  if (addSource !== "wallet") return;
   const token = addPanelToken();
   // One retry: a single RPC hiccup used to leave a dash on the screen for as
   // long as the page stayed open.
@@ -220,7 +268,48 @@ export async function walletBalance(): Promise<void> {
   el.textContent = "could not read";
 }
 
+async function addFromEthereum(value: string): Promise<void> {
+  const d = deployment().starknet;
+  const ok = await run("Bring USDC from Ethereum", async (a) => {
+    requireDeployed();
+    requireKyc();
+    const session = requireSession();
+    const amount = toUnits(value, 6);
+    if (amount === 0n) throw new Error("Enter an amount.");
+    const id = await ensureRegistered(a);
+    a.line("Opening a private USDC note (sign in your wallet)");
+    const noteId = await createOpenNote(session, id, BigInt(d.usdc), a);
+    const burn = await burnToVeil(session, amount, noteId, cctpMaxFee(amount), (m) => a.line(m));
+    a.line(`Burned on Ethereum: ${etherscanTx(burn)}`);
+    const att = await attestation(ETHEREUM_DOMAIN, burn, (m) => a.progress(m));
+    a.line("Circle attested it; delivering into your note");
+    // The keeper relays; a clash with its own transactions just fails, so ask
+    // again until the note shows the USDC.
+    for (let i = 0; i < 40; i++) {
+      if (!isEmptyOpenNote(await noteValue(noteId))) {
+        return `${units(amount, 6, 6)} USDC (less Circle's fee) is in your private balance.`;
+      }
+      if (i % 5 === 0) {
+        try {
+          await relayToVeil(att);
+        } catch (e) {
+          console.warn("relay", e);
+        }
+      }
+      a.progress(`Delivering (${i * 3}s)`);
+      await new Promise((r) => window.setTimeout(r, 3000));
+    }
+    throw new Error("The note has not filled yet. The USDC is safe in the vault; retry later.");
+  });
+  if (ok) {
+    addValue = "";
+    toast("USDC added to your Veil balance.", "good");
+    void refreshAccount();
+  }
+}
+
 async function addToVeil(value: string): Promise<void> {
+  if (isEvm()) return addFromEthereum(value);
   const d = deployment().starknet;
   const token = addToken === "usdc" ? { address: d.usdc, decimals: 6, symbol: "USDC" } : { address: d.strk, decimals: 18, symbol: "STRK" };
   const ok = await run(`Add ${token.symbol} to Veil`, async (a) => {
@@ -461,10 +550,14 @@ export function renderWithdraw(root: HTMLElement): void {
       <div class="line"><span>Private USDC in Veil</span><span id="ou-held"${
         heldUsdcOut !== undefined && heldUsdcOut > 0n ? ` class="link" title="Withdraw all of it"` : ""
       }>${inVeil(d.usdc, 6, 2)} USDC</span></div>
-      <div class="line"><span>Goes to</span><span>${S.session ? escapeHtml(`${S.session.address.slice(0, 8)}…${S.session.address.slice(-4)}`) : "—"}</span></div>
+      <div class="line"><span>Goes to</span><span>${S.session ? escapeHtml(`${S.session.address.slice(0, 8)}…${S.session.address.slice(-4)}`) : "—"}${isEvm() ? " on Ethereum" : ""}</span></div>
     </div>
-    <button class="btn btn-ghost btn-block" id="ou-go" ${S.busy || !S.deployed ? "disabled" : ""}>Withdraw to my wallet</button>
-    <div class="hint">A proven withdrawal: the amount and the address are public, the sender is not.</div>`;
+    <button class="btn btn-ghost btn-block" id="ou-go" ${S.busy || !S.deployed || (isEvm() && !d.cashExit) ? "disabled" : ""}>${isEvm() ? "Send to my wallet on Ethereum" : "Withdraw to my wallet"}</button>
+    <div class="hint">${
+      isEvm()
+        ? "A proven transfer out over Circle's CCTP (fast): the amount and your Ethereum address are public, the sender is not. Your wallet then mints it on Ethereum."
+        : "A proven withdrawal: the amount and the address are public, the sender is not."
+    }</div>`;
   const input = $<HTMLInputElement>("wd-amount");
   document.getElementById("wd-held")?.addEventListener("click", () => {
     const max = maxExit(bal);
@@ -592,7 +685,34 @@ async function withdraw(value: string): Promise<void> {
   }
 }
 
+async function sendToEthereum(value: string): Promise<void> {
+  const ok = await run("Send USDC to Ethereum", async (a) => {
+    requireDeployed();
+    const session = requireSession();
+    const d = deployment().starknet;
+    const amount = toUnits(value, 6);
+    if (amount === 0n) throw new Error("Enter an amount.");
+    const held = privateBalance(BigInt(d.usdc));
+    // The exit hands 1 unit back into the invoke's note.
+    if (held !== undefined && held < amount + INVOKE_CHANGE) throw new Error("Not enough private USDC in Veil.");
+    const id = await ensureRegistered(a);
+    a.line("Proving the transfer out (sign the authorization in your wallet)");
+    const settle = await cashOut(session, id, amount, BigInt(session.address), a);
+    a.line(`Burned from Veil: ${txLink(settle)}`);
+    const att = await attestation(STARKNET_DOMAIN, settle, (m) => a.progress(m));
+    a.line("Circle attested it; mint it on Ethereum (confirm in your wallet)");
+    const mint = await mintOnEthereum(session, att);
+    return `${units(amount, 6, 6)} USDC (less Circle's fee) is in your wallet on Ethereum: ${etherscanTx(mint)}`;
+  });
+  if (ok) {
+    outValue = "";
+    toast("Sent to Ethereum.", "good");
+    void refreshAccount();
+  }
+}
+
 async function takeOut(value: string): Promise<void> {
+  if (isEvm()) return sendToEthereum(value);
   const ok = await run("Withdraw USDC from Veil", async (a) => {
     requireDeployed();
     const session = requireSession();

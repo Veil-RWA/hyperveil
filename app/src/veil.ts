@@ -16,11 +16,14 @@ import {
   deriveChannelKey,
   derivePublicViewingKey,
   deriveViewingKey,
+  deriveViewingKeyEvm,
   makeSenderBalanceRulesReader,
   makeVeilERC3643ContractReader,
   planDeposit,
   planExit,
   planFee,
+  planSameTokenInvoke,
+  type EvmAuthorizationSigner,
   type InvokePlan,
   type Order,
   type OrderTerms,
@@ -90,7 +93,10 @@ export async function unlock(session: Session): Promise<Identity> {
   let k = cachedKey(session.address);
   let publicKey: bigint;
   if (k === null) {
-    const vk = await deriveViewingKey(session.account as never, deployment().starknet.chainId);
+    const vk =
+      session.kind === "evm"
+        ? await deriveViewingKeyEvm(session.signer as EvmAuthorizationSigner, deployment().starknet.chainId)
+        : await deriveViewingKey(session.account as never, deployment().starknet.chainId);
     k = vk.privateKey;
     publicKey = vk.publicKey;
     try {
@@ -166,7 +172,7 @@ function proverConfig(session: Session) {
     transport: d.prover.transport,
     masterAddress: d.prover.masterAddress || undefined,
     rpcUrl: d.starknet.rpc,
-    signer: session.account as never,
+    signer: session.signer as never,
     chainId: d.starknet.chainId,
   };
 }
@@ -440,6 +446,39 @@ export async function exit(
     amount,
     usdcNoteId,
     returnValue: 0n,
+  });
+  return runInvoke(session, plan, progress);
+}
+
+// ── USDC to Ethereum (EVM wallets) ──────────────────────────────────────────
+
+/** Sends `amount` (6 dp) of the user's private USDC to `recipient` on
+ *  Ethereum: a proven pool invoke pays the cash exit, which burns it through
+ *  CCTP (fast) and returns 1 unit to the invoke's note. Circle then attests the
+ *  burn and the recipient's wallet mints it on Ethereum. */
+export async function cashOut(
+  session: Session,
+  id: Identity,
+  amount: bigint,
+  recipient: bigint,
+  progress?: Progress,
+): Promise<string> {
+  const d = deployment();
+  if (!d.starknet.cashExit) throw new Error("This deployment has no cash exit to Ethereum.");
+  const usdc = BigInt(d.starknet.usdc);
+  const maxFee = cctpMaxFee(amount);
+  const U128 = (1n << 128n) - 1n;
+  const plan = planSameTokenInvoke({
+    ...(await planInputs(id, usdc)),
+    token: usdc,
+    target: BigInt(d.starknet.cashExit),
+    amount,
+    // privacy_invoke(open_note_id, amount: u128, recipient: u256, max_fee: u256, min_finality: u32)
+    tail: [
+      hex(amount), hex(recipient & U128), hex(recipient >> 128n), hex(maxFee & U128), hex(maxFee >> 128n),
+      hex(BigInt(d.cctp.minFinality)),
+    ],
+    what: "exit to Ethereum",
   });
   return runInvoke(session, plan, progress);
 }

@@ -70,6 +70,10 @@ function main() {
       permissionManager: d.starknet.permissionManager || '',
       feeAdapter: d.starknet.feeAdapter || '',
       strk20Entry: d.starknet.strk20Entry || '',
+      // USDC over CCTP for EVM wallets (no Starknet account): the vault fills a
+      // note from a burn on Ethereum, the exit burns back.
+      cashVault: d.starknet.cashVault || '',
+      cashExit: d.starknet.cashExit || '',
       usdc: d.starknet.usdc,
       strk: d.starknet.strk,
       twins: Object.entries(d.twins).map(([name, t]) => ({
@@ -80,6 +84,23 @@ function main() {
       })),
     },
     hyperliquid: { api: evmNet.hlApi },
+    // Where an EVM wallet's USDC comes from and goes back to: Circle's CCTP V2
+    // on Ethereum (domain 0). Addresses from Circle's docs.
+    ethereum: network_ === 'mainnet'
+      ? {
+          chainId: 1,
+          rpc: 'https://ethereum-rpc.publicnode.com',
+          usdc: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+          tokenMessenger: '0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d',
+          messageTransmitter: '0x81D40F21F12A8F0E3252Bccb954D722d4c464B64',
+        }
+      : {
+          chainId: 11155111,
+          rpc: 'https://ethereum-sepolia-rpc.publicnode.com',
+          usdc: '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238',
+          tokenMessenger: '0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA',
+          messageTransmitter: '0xE737e5cEBEEBa77EFE34D4aa090756590b1CE275',
+        },
     prover: {
       endpoint: args.prover || process.env.PROVER_ENDPOINT || '',
       transport: args.transport || 'job',
@@ -109,7 +130,7 @@ function main() {
   fs.writeFileSync(appFile, JSON.stringify(app, null, 2) + '\n');
   done('written', appFile);
   const missing = Object.entries(app.starknet)
-    .filter(([k, v]) => typeof v === 'string' && !v && k !== 'strk20Entry')
+    .filter(([k, v]) => typeof v === 'string' && !v && !['strk20Entry', 'cashVault', 'cashExit'].includes(k))
     .map(([k]) => k);
   if (missing.length) done('INCOMPLETE', `no address for: ${missing.join(', ')}`);
   if (!app.prover.endpoint) done('note', 'no prover endpoint: proving falls back to the SDK default');
@@ -133,6 +154,7 @@ function main() {
     `HV_GATEWAY=${d.starknet.gateway || ''}`,
     `HV_ENTRY_HELPER=${d.starknet.entryHelper || ''}`,
     `HV_EXIT_VAULT=${d.starknet.exitVault || ''}`,
+    `HV_CASH_VAULT=${d.starknet.cashVault || ''}`,
     `HV_PERMISSION_MANAGER=${d.starknet.permissionManager || ''}`,
     `SN_STRK=${d.starknet.strk || ''}`,
     `SN_START_BLOCK=${d.starknet.deployBlock ?? 0}`,
