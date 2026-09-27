@@ -359,3 +359,42 @@ footer { max-width: 1440px; margin: 0 auto; padding-block: 1.5rem 2.5rem; border
   .tabs { order: 3; width: 100%; overflow-x: auto; }
   .brand-by { display: none; }
 }
+
+/* Wallet chooser */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: #06080dcc;
+  backdrop-filter: blur(6px);
+}
+.modal {
+  width: min(24rem, 100%);
+  display: grid;
+  gap: .6rem;
+  padding: 1.35rem;
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius);
+  background: var(--color-panel);
+  box-shadow: 0 30px 80px -30px #000;
+}
+.modal h2 { margin: 0 0 .35rem; font-size: 1.05rem; }
+.wallet-option {
+  display: grid;
+  gap: .2rem;
+  width: 100%;
+  padding: .85rem 1rem;
+  text-align: left;
+  color: var(--color-ink);
+  background: #ffffff05;
+  border: 1px solid var(--color-line);
+  border-radius: .75rem;
+  cursor: pointer;
+  transition: border-color .2s, background .2s;
+}
+.wallet-option:hover, .wallet-option:focus-visible { border-color: #c9a86a80; background: #c9a86a0d; outline: none; }
+.wallet-option-name { font-weight: 600; font-size: .95rem; }
+.wallet-option-hint { font-size: .8rem; color: var(--color-muted); }
