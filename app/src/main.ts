@@ -47,7 +47,7 @@ function renderNav(): void {
   // Testnet: USDC is the first thing a new wallet needs, so the way to get
   // some lives in the header rather than inside a form. It is Circle's own
   // faucet — the only USDC that CCTP will carry to Hyperliquid.
-  const faucet = hasTestnetFaucet() && S.session.kind !== "evm"
+  const faucet = hasTestnetFaucet()
     ? `<a class="btn btn-gold" id="nav-faucet" href="${CIRCLE_FAUCET}" target="_blank" rel="noopener noreferrer">Claim USDC faucet</a>`
     : "";
   el.innerHTML = `${net}${kyc}${faucet}

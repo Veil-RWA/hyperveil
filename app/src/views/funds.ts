@@ -52,7 +52,7 @@ import {
   type ExitRecord,
 } from "../chain";
 import { fastTransferBps, feeOf } from "../cctp";
-import { CIRCLE_FAUCET, deployment, hasTestnetFaucet, usdcTwin } from "../config";
+import { CIRCLE_FAUCET, SEPOLIA_ETH_FAUCET, deployment, hasTestnetFaucet, usdcTwin } from "../config";
 import { ago, escapeHtml, hex, units } from "../format";
 import { submit } from "../strk20";
 import {
@@ -138,6 +138,10 @@ function addPanelEvm(): string {
       <div class="line"><span>In Veil now</span><span>${inVeil(d.usdc, 6, 2)} USDC</span></div>
     </div>
     <button class="btn btn-gold btn-block" id="ad-go" ${S.busy || !S.deployed || !d.cashVault ? "disabled" : ""}>Bring USDC from Ethereum</button>
+    ${hasTestnetFaucet()
+      ? `<a class="btn btn-ghost btn-block" id="ad-claim" style="margin-top:.5rem" href="${CIRCLE_FAUCET}" target="_blank" rel="noopener noreferrer">Claim USDC faucet</a>
+         <div class="hint">On Circle's faucet choose <b>Ethereum Sepolia</b> and paste your address. You also need a little Sepolia ETH for gas: <a href="${SEPOLIA_ETH_FAUCET}" target="_blank" rel="noopener noreferrer">Sepolia ETH faucet</a>.</div>`
+      : ""}
     <div class="hint">Your wallet approves and burns the USDC on Ethereum; Circle attests it (about 20 seconds, fast transfer) and it fills a private note in Veil. The amount and your address are public on Ethereum, as with any transfer.</div>`;
 }
 

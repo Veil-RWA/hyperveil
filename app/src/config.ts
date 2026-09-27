@@ -128,6 +128,8 @@ const set = (v: string | undefined): boolean => {
  *  tester who has no USDC — CCTP burns Circle's USDC and nothing else, so it
  *  is also the only kind that reaches Hyperliquid. */
 export const CIRCLE_FAUCET = "https://faucet.circle.com/";
+/** Sepolia ETH, for an EVM wallet's gas on Ethereum (approve + burn, mint). */
+export const SEPOLIA_ETH_FAUCET = "https://cloud.google.com/application/web3/faucet/ethereum/sepolia";
 
 /** Whether to offer it: on mainnet there is nothing to claim. */
 export const hasTestnetFaucet = (d: Deployment = deployment()): boolean => d.network === "testnet";
