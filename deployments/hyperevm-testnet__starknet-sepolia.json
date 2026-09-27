@@ -21,13 +21,15 @@
     "strk20Pool": "0x254a6b2997ef52e9f830ce1f543f6b29768295e8d17e2267d672c552cfe0d91",
     "relayEndpoint": "0x71c06e53db65b2da06a0c01c4e33526cb8f50b8ca5a13ffe5b8da2c6cd934a",
     "factory": "0x3a571e24822507d8c3131cf2b74accdea94feecc758dc963b962308cdae308a",
-    "pool": "0x5c2684e14d14ab4f279f0bc5eebd4bfa0f2b2e5ba4c39b966a7d607de39efbe",
-    "deployBlock": 15394896,
     "gateway": "0x31ade7352458e0c68a7dc09ad34305a44836c18064dc53263932679a6218018",
     "feeAdapter": "0x7cc8ffc37b4c9fb677b1e821ac4605c99694bbededab6aa681704818ecf5be8",
-    "strk20Entry": "0x33c2882c753a1d7bdb023c52004ec331986a5bf3f497f0421d7fca7138b10aa",
     "entryHelper": "0x548680f63fb6c26230520c00d9e7efc61dce85d639a45c6f08dde64942aa245",
-    "exitVault": "0x68533efc9df618a25475c692d1286bcbb64c38d655dc8f680959f74609ec9ff"
+    "exitVault": "0x68533efc9df618a25475c692d1286bcbb64c38d655dc8f680959f74609ec9ff",
+    "previousPool": "0x5c2684e14d14ab4f279f0bc5eebd4bfa0f2b2e5ba4c39b966a7d607de39efbe",
+    "previousStrk20Entry": "0x33c2882c753a1d7bdb023c52004ec331986a5bf3f497f0421d7fca7138b10aa",
+    "pool": "0x591125530e3cdd33e1c8772d78f5b4313676673a2d649ffdc795f09cd31f34f",
+    "deployBlock": 15722165,
+    "strk20Entry": "0x41c485420ad0685873c53435eb9d036a79ca2ac734558abc6f5b5e73af02db2"
   },
   "twins": {
     "USDC": {
@@ -59,14 +61,15 @@
     "HyperVeilEntryHelper": "0x1c31bdca23a9d07298369f5967731d4631421a5daef46aff15f25fe9c0c4f5b",
     "HyperVeilExitVault": "0x7d7b545631ae1cb278641b344badd6032eb468961ec6572ee5eefdead6b7ea0",
     "HyperVeilRelayEndpoint": "0x4f6f5381ece0b1a08fc511067a11d6cb67e8aeafc66e87d8e97541c4c9a3624",
-    "VeilERC3643": "0x6a98d3711885369bb3e0ced02274fd98dbbc79ff95b37b04061e2057e42ae60",
-    "VeilERC3643Factory": "0x550be4253561abd28bbaea24e937a470640c22cf63f59b508dcd3907d75494a"
+    "VeilERC3643": "0x7567a8c29c3e2af9e4b91dff952d03266ad0814a756c364938fc674b0b44c7b",
+    "VeilERC3643Factory": "0x550be4253561abd28bbaea24e937a470640c22cf63f59b508dcd3907d75494a",
+    "VeilEvmVerifier": "0x205192a0d29e39db9f2132a75d12718cb69286d14799215f96d22c9c8d49185"
   },
   "wired": {
     "keeperEvm": "0x878ffCF3351C6596Bd75355E00319AB5Fcf1c639",
     "keeperSn": "0x7f69f195543ee9bc33e3fb1bf4609e96d49a7cc9e22a136ed4a3f80570c7121",
-    "exchange": "0x7f69f195543ee9bc33e3fb1bf4609e96d49a7cc9e22a136ed4a3f80570c7121",
-    "at": "2026-09-26T20:54:50.818Z",
-    "abstraction": 1
+    "at": "2026-09-27T14:45:28.738Z",
+    "abstraction": 1,
+    "exchange": "0x7f69f195543ee9bc33e3fb1bf4609e96d49a7cc9e22a136ed4a3f80570c7121"
   }
 }

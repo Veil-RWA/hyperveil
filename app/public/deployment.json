@@ -3,14 +3,14 @@
   "starknet": {
     "rpc": "https://starknet-sepolia.drpc.org",
     "chainId": "0x534e5f5345504f4c4941",
-    "deployBlock": 15394896,
-    "pool": "0x5c2684e14d14ab4f279f0bc5eebd4bfa0f2b2e5ba4c39b966a7d607de39efbe",
+    "deployBlock": 15722165,
+    "pool": "0x591125530e3cdd33e1c8772d78f5b4313676673a2d649ffdc795f09cd31f34f",
     "gateway": "0x31ade7352458e0c68a7dc09ad34305a44836c18064dc53263932679a6218018",
     "entryHelper": "0x548680f63fb6c26230520c00d9e7efc61dce85d639a45c6f08dde64942aa245",
     "exitVault": "0x68533efc9df618a25475c692d1286bcbb64c38d655dc8f680959f74609ec9ff",
     "permissionManager": "0x617394e6224a5f25650752a26421e181f2c638c07c6cd110229ec9350aa5299",
     "feeAdapter": "0x7cc8ffc37b4c9fb677b1e821ac4605c99694bbededab6aa681704818ecf5be8",
-    "strk20Entry": "0x33c2882c753a1d7bdb023c52004ec331986a5bf3f497f0421d7fca7138b10aa",
+    "strk20Entry": "0x41c485420ad0685873c53435eb9d036a79ca2ac734558abc6f5b5e73af02db2",
     "usdc": "0x0512feAc6339Ff7889822cb5aA2a86C848e9D392bB0E3E237C008674feeD8343",
     "strk": "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d",
     "twins": [
