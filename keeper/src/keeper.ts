@@ -480,6 +480,15 @@ export class Keeper {
       // Each deposit on its own: one that cannot move yet must not hold back
       // the ones behind it.
       try {
+        // With the float on, a deposit whose HyperCore transfer never landed
+        // (Circle's testnet cap) is completed from the float instead: back to
+        // `relayed`, which the float path moves. Its USDC is still the
+        // keeper's on HyperEVM or in transit, and the omnibus still refuses
+        // the credit until HyperCore holds the amount.
+        if (d.stage === "stalled" && this.params.coreFloat) {
+          d.stage = "relayed";
+          this.log(`deposit ${id}: resuming from the HyperCore float`);
+        }
         if (d.stage === "credited" || d.stage === "stalled") continue;
         // `busy` guards the balance-delta test of a bridging deposit. A
         // deposit moved from the float does not use that test, so it does
