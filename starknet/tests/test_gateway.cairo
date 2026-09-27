@@ -172,6 +172,8 @@ fn setup() -> Env {
     p.add_allowlisted_token(hype_twin, pm, 0);
     p.add_rules_token(usdc, usdc_rules);
     p.add_rules_token(strk, strk_rules);
+    // Makers deposit USDC and STRK from their Starknet wallets.
+    p.set_direct_access(true);
     p.set_venue(gateway);
     p.set_adapter_allowed(gateway, true);
     p.set_adapter_allowed(helper, true);
