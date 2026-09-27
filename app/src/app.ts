@@ -10,7 +10,7 @@ import type { Book, HyperliquidInfo, Market, Trade } from "./market";
 import { AccountStore, type StoredOrder } from "./store";
 import { strk20Balances } from "./strk20";
 import { forgetKey, hasCachedKey, ownedNotes, register, unlock, type Identity } from "./veil";
-import { connectWallet, disconnectWallet, type Session } from "./wallet";
+import { connectEvmWallet, connectWallet, disconnectWallet, type Session } from "./wallet";
 
 export type Tab = "trade" | "portfolio" | "deposit" | "withdraw";
 
@@ -202,9 +202,11 @@ async function attach(session: Session, prompt: boolean): Promise<void> {
   void refreshAccount();
 }
 
-export async function connect(): Promise<void> {
+/** Connects a Starknet wallet, or (`"evm"`) an EVM wallet that holds its
+ *  notes as itself. */
+export async function connect(kind: "starknet" | "evm" = "starknet"): Promise<void> {
   try {
-    await attach(await connectWallet(), true);
+    await attach(kind === "evm" ? await connectEvmWallet() : await connectWallet(), true);
   } catch (e) {
     toast(errorText(e), "bad");
   }
@@ -282,6 +284,10 @@ export async function refreshAccount(): Promise<void> {
       console.warn("note discovery failed", e);
     }
   }
+  if (session.kind === "evm") {
+    refresh();
+    return;
+  }
   try {
     S.strk20 = await strk20Balances(session, [d.usdc, d.strk]);
   } catch (e) {
@@ -293,7 +299,7 @@ export async function refreshAccount(): Promise<void> {
 }
 
 export function requireSession(): Session {
-  if (!S.session) throw new Error("Connect a Starknet wallet first.");
+  if (!S.session) throw new Error("Connect a wallet first.");
   return S.session;
 }
 

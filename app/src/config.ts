@@ -30,6 +30,10 @@ export interface Deployment {
     feeAdapter: string;
     /** The STRK20 -> Veil entry (optional: only "from STRK20" needs it). */
     strk20Entry: string;
+    /** USDC over CCTP for EVM wallets: the vault fills a note from a burn on
+     *  Ethereum, the exit burns a note's USDC back to Ethereum. */
+    cashVault?: string;
+    cashExit?: string;
     /** Circle USDC on Starknet — a pool token, and what a deposit spends. */
     usdc: string;
     /** STRK: a pool token too, because fees are paid from it. */
@@ -37,6 +41,8 @@ export interface Deployment {
     twins: TwinConfig[];
   };
   hyperliquid: { api: string };
+  /** Circle's CCTP V2 on Ethereum (domain 0), for EVM wallets. */
+  ethereum: { chainId: number; rpc: string; usdc: string; tokenMessenger: string; messageTransmitter: string };
   prover: { endpoint: string; transport?: "sse" | "job"; masterAddress?: string };
   keeper: { intake: string };
   /** A KYC service that decides who may hold HyperVeil assets. NOT used on

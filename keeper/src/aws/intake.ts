@@ -3,6 +3,8 @@
 //   POST /openings  {orderId, maker, makerSalt, makerRules?, tif}
 //   POST /cancel    {orderId, makerSalt}
 //   POST /allowlist {address}   TESTNET ONLY (HV_OPEN_ALLOWLIST)
+//   POST /relay-cash {message, attestation}   an EVM wallet's CCTP burn into
+//                                              its note (HV_CASH_VAULT)
 //   GET  /health
 //
 // Same checks as the long-running intake: an opening is accepted only if it
@@ -12,6 +14,7 @@
 //
 // Browsers call this directly, so it answers CORS preflights.
 
+import { Account, RpcProvider } from "starknet";
 import { NEUTRAL_RULES, type SenderBalanceRules } from "veil-sdk";
 import { loadConfig } from "../config.js";
 import { checkOpening, parseAddress } from "../intake.js";
@@ -53,6 +56,18 @@ const reply = (statusCode: number, body: unknown) => ({
   headers: CORS,
   body: JSON.stringify(body),
 });
+
+/** Hex bytes (0x…) as Cairo `ByteArray` calldata: [full 31-byte words…,
+ *  pending word, pending length]. */
+function byteArrayCalldata(value: unknown): string[] {
+  const hex = String(value ?? "").replace(/^0x/i, "");
+  if (!hex || hex.length % 2 || !/^[0-9a-fA-F]+$/.test(hex)) throw new Error("expected hex bytes");
+  const words: string[] = [];
+  let i = 0;
+  for (; i + 62 <= hex.length; i += 62) words.push("0x" + hex.slice(i, i + 62));
+  const pending = hex.slice(i);
+  return [String(words.length), ...words, "0x" + (pending || "0"), String(pending.length / 2)];
+}
 
 const rules = (v: unknown): SenderBalanceRules => {
   if (!v || typeof v !== "object") return NEUTRAL_RULES;
@@ -114,6 +129,28 @@ export async function handler(event: FunctionUrlEvent): Promise<unknown> {
     if (await sn.isWhitelisted(address)) return reply(200, { ok: true, whitelisted: true });
     await store.putAllowlist(address);
     return reply(200, { ok: true, whitelisted: false });
+  }
+
+  // An EVM wallet's USDC, burned on Ethereum into the cash vault with its note
+  // id as hook data. Relaying Circle's attested message is permissionless (the
+  // vault checks it through Circle's MessageTransmitter and fills only the note
+  // the burn named); an EVM wallet has no Starknet account to send it from, so
+  // the keeper's account does. Sent here rather than by the tick so the user
+  // waits seconds, not a schedule; a clash with the tick's nonce just fails and
+  // the app asks again.
+  if (method === "POST" && path.endsWith("/relay-cash")) {
+    const vault = process.env.HV_CASH_VAULT;
+    if (!vault) return reply(404, { error: "no cash vault configured" });
+    try {
+      const calldata = [...byteArrayCalldata(body.message), ...byteArrayCalldata(body.attestation)];
+      const cfg = loadConfig();
+      const provider = new RpcProvider({ nodeUrl: cfg.starknet.rpcUrl });
+      const account = new Account({ provider, address: cfg.starknet.keeperAddress, signer: cfg.starknet.keeperKey });
+      const res = await account.execute({ contractAddress: vault, entrypoint: "receive_deposit", calldata });
+      return reply(200, { ok: true, txHash: res.transaction_hash });
+    } catch (e) {
+      return reply(400, { error: String((e as Error).message ?? e).slice(0, 400) });
+    }
   }
 
   if (method === "POST" && path.endsWith("/openings")) {

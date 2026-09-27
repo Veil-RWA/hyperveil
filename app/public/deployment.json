@@ -3,14 +3,16 @@
   "starknet": {
     "rpc": "https://starknet-sepolia.drpc.org",
     "chainId": "0x534e5f5345504f4c4941",
-    "deployBlock": 15722165,
-    "pool": "0x591125530e3cdd33e1c8772d78f5b4313676673a2d649ffdc795f09cd31f34f",
+    "deployBlock": 15727478,
+    "pool": "0x775a54d9b495d8886c4fe9e1184a17e313fc7899e3e63a638a42250d66af48e",
     "gateway": "0x31ade7352458e0c68a7dc09ad34305a44836c18064dc53263932679a6218018",
     "entryHelper": "0x548680f63fb6c26230520c00d9e7efc61dce85d639a45c6f08dde64942aa245",
     "exitVault": "0x68533efc9df618a25475c692d1286bcbb64c38d655dc8f680959f74609ec9ff",
     "permissionManager": "0x617394e6224a5f25650752a26421e181f2c638c07c6cd110229ec9350aa5299",
     "feeAdapter": "0x7cc8ffc37b4c9fb677b1e821ac4605c99694bbededab6aa681704818ecf5be8",
-    "strk20Entry": "0x41c485420ad0685873c53435eb9d036a79ca2ac734558abc6f5b5e73af02db2",
+    "strk20Entry": "0x6b41ce583bed00a1207d9163ef6697cd5a9c7a87e6790329c74e2a2a5bc715",
+    "cashVault": "0x4527062380a19ac1436df319511bb35afd6fed2d5649375dc8dc6a0ce475cdd",
+    "cashExit": "0x4739dfd3e28d640c0b2860df4b4b77aeafb9d308f9afa3fa395845c13536d55",
     "usdc": "0x0512feAc6339Ff7889822cb5aA2a86C848e9D392bB0E3E237C008674feeD8343",
     "strk": "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d",
     "twins": [
@@ -37,13 +39,20 @@
   "hyperliquid": {
     "api": "https://api.hyperliquid-testnet.xyz"
   },
+  "ethereum": {
+    "chainId": 11155111,
+    "rpc": "https://ethereum-sepolia-rpc.publicnode.com",
+    "usdc": "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238",
+    "tokenMessenger": "0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA",
+    "messageTransmitter": "0xE737e5cEBEEBa77EFE34D4aa090756590b1CE275"
+  },
   "prover": {
     "endpoint": "https://pd69khdynb.execute-api.us-east-1.amazonaws.com",
     "transport": "job",
     "masterAddress": "0x07f69F195543eE9Bc33E3Fb1BF4609e96d49a7Cc9e22A136eD4A3F80570C7121"
   },
   "keeper": {
-    "intake": ""
+    "intake": "https://knv32cwoli.execute-api.us-east-1.amazonaws.com"
   },
   "kyc": {
     "url": ""

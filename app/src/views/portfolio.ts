@@ -135,8 +135,9 @@ function drawBalances(): void {
     S.identity ? `<button class="btn btn-ghost btn-sm" id="pf-refresh">Refresh</button>` : ""
   }</div>`;
   if (!S.session) {
-    el.innerHTML = `${head}<div class="gate"><p>Connect the Starknet wallet you trade with.</p><button class="btn btn-gold" id="pf-connect">Connect wallet</button></div>`;
+    el.innerHTML = `${head}<div class="gate"><p>Connect the wallet you trade with.</p><button class="btn btn-gold" id="pf-connect">Connect Starknet wallet</button> <button class="btn btn-ghost" id="pf-connect-evm">Connect EVM wallet</button></div>`;
     $("pf-connect").addEventListener("click", () => void connect());
+    $("pf-connect-evm").addEventListener("click", () => void connect("evm"));
     return;
   }
   if (!S.identity) {

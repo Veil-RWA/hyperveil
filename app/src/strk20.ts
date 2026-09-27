@@ -11,6 +11,7 @@ import type { Session } from "./wallet";
 
 /** Private STRK20 balances of `tokens` (token address -> amount). */
 export async function strk20Balances(session: Session, tokens: string[]): Promise<Map<bigint, bigint>> {
+  if (!session.account) return new Map();
   const entries = (await session.account.strk20Balances(tokens)) as Array<{ token: string; balance: string }>;
   return new Map(entries.map((e) => [BigInt(e.token), BigInt(e.balance)]));
 }
@@ -18,6 +19,7 @@ export async function strk20Balances(session: Session, tokens: string[]): Promis
 /** Submits STRK20 actions as one transaction (the wallet proves and pays
  *  the network fee) and waits for it. */
 export async function submit(session: Session, actions: Strk20Action[]): Promise<string> {
+  if (!session.account) throw new Error("STRK20 needs a Starknet wallet.");
   const { transaction_hash } = await session.account.strk20InvokeTransaction(actions as never);
   return settled(transaction_hash);
 }

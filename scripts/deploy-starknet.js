@@ -111,7 +111,7 @@ async function main() {
   console.log(`omnibus      ${d.evm.omnibus ?? 'NOT DEPLOYED YET (deferring the helper and the vault)'} (eid ${d.evmEid})`);
   console.log(`tokens       ${tokens.map((t) => `${t.name}#${t.index}/${t.weiDecimals}dp`).join(', ')}`);
 
-  const total = 9;
+  const total = 10;
   d.starknet.auditorPublicKey = num.toHex(BigInt(auditorKey));
   d.starknet.usdc = net.usdc;
   d.starknet.strk = net.strk;
@@ -284,6 +284,32 @@ async function main() {
     d.starknet.strk20Entry = await deploy(account, cls, [d.starknet.strk20Pool, d.starknet.pool]);
     saveDeployment(args, d);
     done('strk20 entry', d.starknet.strk20Entry);
+  }
+
+  // An EVM wallet holds notes with no Starknet account, so its USDC comes and
+  // goes over CCTP from and to Ethereum: a vault that fills its open note from
+  // a burn naming the note, and an exit a proven invoke pays to burn back. Both
+  // bound to this pool. The classes are the Veil bridge's cash leg, declared
+  // on this network (their hashes are in `classes`).
+  step(10, total, 'USDC over CCTP for EVM wallets (cash vault + exit)');
+  if (!d.classes.VeilCashVault || !d.classes.VeilCashExit) {
+    done('skipped', 'no VeilCashVault / VeilCashExit class hash in this deployment');
+  } else {
+    if (!d.starknet.cashVault) {
+      d.starknet.cashVault = await deploy(account, d.classes.VeilCashVault, [
+        d.starknet.pool, net.usdc, net.messageTransmitter, net.tokenMessenger,
+      ]);
+      saveDeployment(args, d);
+    }
+    done('cash vault', d.starknet.cashVault);
+    if (!d.starknet.cashExit) {
+      // Destination: Ethereum (CCTP domain 0).
+      d.starknet.cashExit = await deploy(account, d.classes.VeilCashExit, [
+        d.starknet.pool, net.usdc, net.tokenMessenger, '0',
+      ]);
+      saveDeployment(args, d);
+    }
+    done('cash exit', d.starknet.cashExit);
   }
 
   // The gateway's own view of the pool, as a last check that nothing is crossed.

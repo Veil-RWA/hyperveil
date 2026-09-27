@@ -25,11 +25,18 @@
     "feeAdapter": "0x7cc8ffc37b4c9fb677b1e821ac4605c99694bbededab6aa681704818ecf5be8",
     "entryHelper": "0x548680f63fb6c26230520c00d9e7efc61dce85d639a45c6f08dde64942aa245",
     "exitVault": "0x68533efc9df618a25475c692d1286bcbb64c38d655dc8f680959f74609ec9ff",
-    "previousPool": "0x5c2684e14d14ab4f279f0bc5eebd4bfa0f2b2e5ba4c39b966a7d607de39efbe",
-    "previousStrk20Entry": "0x33c2882c753a1d7bdb023c52004ec331986a5bf3f497f0421d7fca7138b10aa",
-    "pool": "0x591125530e3cdd33e1c8772d78f5b4313676673a2d649ffdc795f09cd31f34f",
-    "deployBlock": 15722165,
-    "strk20Entry": "0x41c485420ad0685873c53435eb9d036a79ca2ac734558abc6f5b5e73af02db2"
+    "previousPools": [
+      "0x5c2684e14d14ab4f279f0bc5eebd4bfa0f2b2e5ba4c39b966a7d607de39efbe",
+      "0x591125530e3cdd33e1c8772d78f5b4313676673a2d649ffdc795f09cd31f34f"
+    ],
+    "previousStrk20Entries": [
+      "0x41c485420ad0685873c53435eb9d036a79ca2ac734558abc6f5b5e73af02db2"
+    ],
+    "pool": "0x775a54d9b495d8886c4fe9e1184a17e313fc7899e3e63a638a42250d66af48e",
+    "deployBlock": 15727478,
+    "strk20Entry": "0x6b41ce583bed00a1207d9163ef6697cd5a9c7a87e6790329c74e2a2a5bc715",
+    "cashVault": "0x4527062380a19ac1436df319511bb35afd6fed2d5649375dc8dc6a0ce475cdd",
+    "cashExit": "0x4739dfd3e28d640c0b2860df4b4b77aeafb9d308f9afa3fa395845c13536d55"
   },
   "twins": {
     "USDC": {
@@ -61,14 +68,16 @@
     "HyperVeilEntryHelper": "0x1c31bdca23a9d07298369f5967731d4631421a5daef46aff15f25fe9c0c4f5b",
     "HyperVeilExitVault": "0x7d7b545631ae1cb278641b344badd6032eb468961ec6572ee5eefdead6b7ea0",
     "HyperVeilRelayEndpoint": "0x4f6f5381ece0b1a08fc511067a11d6cb67e8aeafc66e87d8e97541c4c9a3624",
-    "VeilERC3643": "0x7567a8c29c3e2af9e4b91dff952d03266ad0814a756c364938fc674b0b44c7b",
+    "VeilERC3643": "0x30396f88c7ef945c153136f3694098deb61799d77f191f6ec0d72773a8f837d",
     "VeilERC3643Factory": "0x550be4253561abd28bbaea24e937a470640c22cf63f59b508dcd3907d75494a",
-    "VeilEvmVerifier": "0x205192a0d29e39db9f2132a75d12718cb69286d14799215f96d22c9c8d49185"
+    "VeilEvmVerifier": "0x795e05cca67d30ce404c2242526401e4b6b5d1adb2b42b51a44918821ca512f",
+    "VeilCashVault": "0x2cc08aee92ed6d39b6c340351278410afb4c81c10c776c170a7da96c1ffb64d",
+    "VeilCashExit": "0x1fc2f5d76be5d3d680d730d58767e48ae377d57a7aa7796f22441610f2ea1ec"
   },
   "wired": {
     "keeperEvm": "0x878ffCF3351C6596Bd75355E00319AB5Fcf1c639",
     "keeperSn": "0x7f69f195543ee9bc33e3fb1bf4609e96d49a7cc9e22a136ed4a3f80570c7121",
-    "at": "2026-09-27T14:45:28.738Z",
+    "at": "2026-09-27T17:16:44.731Z",
     "abstraction": 1,
     "exchange": "0x7f69f195543ee9bc33e3fb1bf4609e96d49a7cc9e22a136ed4a3f80570c7121"
   }
