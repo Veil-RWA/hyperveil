@@ -21,7 +21,6 @@ import {
   makeVeilERC3643ContractReader,
   planDeposit,
   planExit,
-  planFee,
   planSameTokenInvoke,
   type EvmAuthorizationSigner,
   type InvokePlan,
@@ -379,28 +378,6 @@ async function runInvoke(session: Session, plan: InvokePlan, progress?: Progress
     onEvent: relay(progress) as never,
   });
   return settled(res.txHash);
-}
-
-/** Prepays a LayerZero fee from the user's STRK notes, through the fee
- *  adapter: `FUND_ORDER` (key = order id) or `FUND_NOTE` (key = note id). */
-export async function payFee(
-  session: Session,
-  id: Identity,
-  target: 0 | 1,
-  key: bigint,
-  amount: bigint,
-  progress?: Progress,
-): Promise<string> {
-  const d = deployment().starknet;
-  const plan = planFee({
-    ...(await planInputs(id, BigInt(d.strk))),
-    strk: BigInt(d.strk),
-    feeAdapter: BigInt(d.feeAdapter),
-    target,
-    key,
-    amount,
-  });
-  return runInvoke(session, plan, progress);
 }
 
 /** Sends `amountUsdc6` of the user's private USDC to Hyperliquid: the entry

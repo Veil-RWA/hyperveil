@@ -43,15 +43,15 @@ testnet; not yet on mainnet.
 
 ## Flows
 
-**Getting USDC (and STRK) into the pool.** Either a plain Veil deposit from
-the wallet — one approval, then a proven `deposit` — or, privately, one STRK20
-transaction that withdraws to the **STRK20 entry** and invokes it, which fills
-an open note the user created first (`create_open_note`). The same two routes
-carry the STRK that pays for messages.
+**Getting USDC into the pool.** Either a plain Veil deposit from the wallet —
+one approval, then a proven `deposit` — or, privately, one STRK20 transaction
+that withdraws to the **STRK20 entry** and invokes it, which fills an open
+note the user created first (`create_open_note`). No STRK is needed: every
+message fee is paid by the paymaster (the keeper).
 
 **Deposit (USDC to Hyperliquid).** The user creates an empty USDC-twin open
-note (`create_open_note`) and prepays its DEPOSIT fee from private STRK
-(`fund_note`, through the fee adapter). Then one proven pool `invoke`:
+note (`create_open_note`); the paymaster (the keeper's `/fund-note`) pays its
+DEPOSIT fee into that note's credit (`fund_note`). Then one proven pool `invoke`:
 1. The pool pays the **entry helper** `amount + 1` USDC and calls it.
 2. The helper calls `gateway.register_deposit`, which claims the twin note and sends DEPOSIT, paying from the STRK prepaid against that note.
 3. The helper burns the USDC through CCTP to the omnibus. The deposit id is the hook data, and the omnibus is the destination caller.
@@ -96,7 +96,7 @@ expired (`cancel_route`). CANCEL makes the omnibus cancel by cloid. The
 keeper's closing report then releases whatever was not spent.
 
 **Exit (USDC back from Hyperliquid).**
-1. The user creates an empty real-USDC open note (`create_open_note`) — the note the USDC comes back into — and prepays its WITHDRAW fee from private STRK (`fund_note`). The credit is keyed by that note, so it can only pay for the exit that fills it.
+1. The user creates an empty real-USDC open note (`create_open_note`) — the note the USDC comes back into. The paymaster (the keeper's `/fund-note`) pays its WITHDRAW fee into that note's credit (`fund_note`). The credit is keyed by that note, so it can only pay for the exit that fills it.
 2. A proven pool `invoke` (`in_token == out_token` = the USDC twin, adapter = gateway) spends `amount + 1`. The gateway (`privacy_invoke`) burns `amount`, registers the exit in the **exit vault** against the named note, pays WITHDRAW from its credit, and returns 1 unit into the invoke's open note. The pool places that open note in the slot after the change note.
 3. The omnibus moves the USDC HyperCore → HyperEVM (send-asset to USDC's system address).
 4. Once it has arrived, `burnExit` burns it through CCTP to the vault, with the exit id as hook data.
@@ -179,8 +179,8 @@ flows above:
 |---|---|
 | Trade | Market (IOC), limit (GTC) and post-only (ALO) orders. Posts the DvP order (proven), hands the keeper the opening; the keeper pays the route fee. Orders under 10 USDC are only crossed inside Veil. |
 | Portfolio | Private balances and orders, decrypted in the browser with the Veil key. Cancel runs a proven `cancel_order`. For a routed order, it first asks the keeper to pull the order back from Hyperliquid. |
-| Deposit | Adds USDC (or STRK) to Veil from the wallet or from STRK20, and sends USDC to Hyperliquid: opens the USDC-twin note (proven), prepays its fee from private STRK, then one proven invoke. On testnet it also has **Claim USDC faucet**, a link to [Circle's faucet](https://faucet.circle.com/) — 20 USDC every 2 hours on Starknet Sepolia. |
-| Withdraw | Brings USDC back: opens the note it lands in (proven), prepays its fee, then one proven invoke — no claim step. Also takes USDC out of Veil to any address. "Find my withdrawals" recovers exits this browser lost track of, by matching the vault's exits against the notes the user's key owns. |
+| Deposit | Adds USDC (or STRK) to Veil from the wallet or from STRK20, and sends USDC to Hyperliquid: opens the USDC-twin note (proven), the paymaster pays its fee, then one proven invoke. On testnet it also has **Claim USDC faucet**, a link to [Circle's faucet](https://faucet.circle.com/) — 20 USDC every 2 hours on Starknet Sepolia. |
+| Withdraw | Brings USDC back: opens the note it lands in (proven), the paymaster pays its fee, then one proven invoke — no claim step. Also takes USDC out of Veil to any address. "Find my withdrawals" recovers exits this browser lost track of, by matching the vault's exits against the notes the user's key owns. |
 
 Connecting a wallet asks for one signature straight away: it derives the Veil
 key, which is what finds this account's notes. Behind a button it meant
@@ -243,5 +243,6 @@ both so they cannot drift: `fees.returnValue` (the app) = `HV_RETURN_VALUE`
 - **Fee bound.** `maxFeeBps` (10) must stay at or above Hyperliquid's worst spot fee (base taker 7 bps). If Hyperliquid ever charged more, fills could not be credited until it is raised.
 - **Misattribution.** The keeper could misattribute fills between concurrent routes of one token. Solvency holds regardless; per-user fairness then rests on the keeper.
 - **Scope.** Only USDC exits. A HIP-1 twin leaves by selling into USDC first, as specified.
-- **Unspent fee credit.** Prepaid STRK that routing, a deposit or an exit does not use stays in `order_credit` / `note_credit`. There is no refund path; the app's headroom keeps the overpayment small.
+- **Unspent fee credit.** STRK the paymaster paid in that a deposit or an exit does not use stays in `note_credit` (and any older `order_credit`). There is no refund path; the keeper's headroom (30%) keeps the overpayment small.
+- **Paymaster exposure.** The keeper pays a note's fee only for an empty, unused open note of the right token, and at most the gateway's quote plus headroom. Someone who opens notes and never uses them costs the paymaster one message fee each.
 - **Quarantines.** A credit the pool refuses waits in the gateway (`retry_credit`); an exit delivery it refuses waits in the vault (`retry_delivery`). Both are permissionless, and the keeper retries the second on its next tick.

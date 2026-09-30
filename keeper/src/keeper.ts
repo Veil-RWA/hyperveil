@@ -20,7 +20,7 @@
 //               cancelled on Hyperliquid
 
 import { getBytes } from "ethers";
-import { VeilDvpExchange, type AuthorizationSigner } from "veil-sdk";
+import { VeilDvpExchange, type StarknetAuthorizationSigner } from "veil-sdk";
 import { CCTP_DOMAIN, type IrisApi } from "./iris.js";
 import { isClosed, routeTotals, type HlFill } from "./fills.js";
 import { hlOrderFor, type SpotPair } from "./hlMath.js";
@@ -101,7 +101,7 @@ export class Keeper {
     masterAddress?: string,
   ): VeilDvpExchange {
     const account = sn.account;
-    const signer: AuthorizationSigner = {
+    const signer: StarknetAuthorizationSigner = {
       address: account.address,
       // The SDK's typed data is starknet.js's; the account signs it as-is.
       signMessage: (td) => account.signMessage(td as never) as never,

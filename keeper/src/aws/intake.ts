@@ -5,6 +5,8 @@
 //   POST /allowlist {address}   TESTNET ONLY (HV_OPEN_ALLOWLIST)
 //   POST /relay-cash {message, attestation}   an EVM wallet's CCTP burn into
 //                                              its note (HV_CASH_VAULT)
+//   POST /fund-note {noteId, purpose, amount}  the paymaster pays a deposit's
+//                                              or exit's message fee (STRK)
 //   GET  /health
 //
 // Same checks as the long-running intake: an opening is accepted only if it
@@ -18,6 +20,7 @@ import { Account, RpcProvider } from "starknet";
 import { NEUTRAL_RULES, type SenderBalanceRules } from "veil-sdk";
 import { loadConfig } from "../config.js";
 import { checkOpening, parseAddress } from "../intake.js";
+import { noteFeeToFund } from "../noteFees.js";
 import { StarknetSide } from "../starknetSide.js";
 import { key, type Opening } from "../store.js";
 import { DynamoStore } from "./store.js";
@@ -36,8 +39,8 @@ const CORS = {
   "access-control-allow-headers": "content-type",
 };
 
-/** The intake never sends a transaction — the tick does — so the key here is
- *  only what the account object wants for the reads they share. */
+/** Reads, plus the one transaction the intake sends itself: the paymaster's
+ *  note-fee payment (`/fund-note`). Everything else is the tick's. */
 const starknetSide = (cfg: ReturnType<typeof loadConfig>): StarknetSide =>
   new StarknetSide(
     cfg.starknet.rpcUrl,
@@ -148,6 +151,30 @@ export async function handler(event: FunctionUrlEvent): Promise<unknown> {
       const account = new Account({ provider, address: cfg.starknet.keeperAddress, signer: cfg.starknet.keeperKey });
       const res = await account.execute({ contractAddress: vault, entrypoint: "receive_deposit", calldata });
       return reply(200, { ok: true, txHash: res.transaction_hash });
+    } catch (e) {
+      return reply(400, { error: String((e as Error).message ?? e).slice(0, 400) });
+    }
+  }
+
+  // The paymaster: pays a deposit's or exit's message fee (STRK) into its
+  // note's credit, so the user needs no STRK. The note is checked on-chain
+  // first (noteFees.ts): only an empty, unused open note of the right token,
+  // and only up to the gateway's own quote. Sent here rather than by the tick
+  // so the user waits seconds; a clash with the tick's nonce just fails and
+  // the app asks again.
+  if (method === "POST" && path.endsWith("/fund-note")) {
+    const purpose = body.purpose === "deposit" || body.purpose === "exit" ? body.purpose : null;
+    if (!purpose) return reply(400, { error: "purpose must be deposit or exit" });
+    try {
+      const noteId = BigInt(String(body.noteId));
+      const amount = BigInt(String(body.amount));
+      const cfg = loadConfig();
+      const sn = starknetSide(cfg);
+      const decision = noteFeeToFund(await sn.noteFeeFacts(noteId, purpose, amount, cfg.params.returnValue));
+      if ("refuse" in decision) return reply(400, { error: decision.refuse });
+      if (decision.amount === 0n) return reply(200, { ok: true, funded: "0" });
+      const txHash = await sn.fundNote(noteId, decision.amount);
+      return reply(200, { ok: true, funded: decision.amount.toString(), txHash });
     } catch (e) {
       return reply(400, { error: String((e as Error).message ?? e).slice(0, 400) });
     }

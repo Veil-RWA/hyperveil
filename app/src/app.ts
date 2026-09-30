@@ -2,10 +2,10 @@
 // user's Veil identity, account reads, the activity panel and toasts, and the
 // keeper's intake.
 
-import { INVOKE_CHANGE, type OwnedNote } from "veil-sdk";
-import { isWhitelisted, registeredViewingKey } from "./chain";
+import type { OwnedNote } from "veil-sdk";
+import { isWhitelisted, noteCredit, registeredViewingKey } from "./chain";
 import { deployment, explorer, isDeployed } from "./config";
-import { escapeHtml, units } from "./format";
+import { escapeHtml, hex } from "./format";
 import type { Book, HyperliquidInfo, Market, Trade } from "./market";
 import { AccountStore, type StoredOrder } from "./store";
 import { strk20Balances } from "./strk20";
@@ -383,22 +383,6 @@ export function privateBalance(token: bigint): bigint | undefined {
   return S.notes.filter((n) => n.token === token).reduce((t, n) => t + n.amount, 0n);
 }
 
-/**
- * Refuses a prepayment the account cannot make, with a message that says where
- * to get the STRK. Messages are paid from private STRK, so an account with a
- * full USDC balance and no STRK can otherwise get all the way to the last step
- * and be told "insufficient balance" by the note selector.
- */
-export function requireFeeBalance(need: bigint): void {
-  if (need <= 0n) return;
-  const held = privateBalance(BigInt(deployment().starknet.strk));
-  if (held === undefined || held >= need + INVOKE_CHANGE) return;
-  throw new Error(
-    `This message costs ${units(need, 18, 6)} STRK and you hold ${units(held, 18, 6)} in Veil. ` +
-      `Add some under "Add to your Veil balance", on the STRK (fees) tab.`,
-  );
-}
-
 // ── Keeper intake ───────────────────────────────────────────────────────────
 
 async function intake(path: string, body: unknown): Promise<void> {
@@ -432,15 +416,35 @@ export async function sendCancel(o: StoredOrder): Promise<void> {
   await intake("/cancel", { orderId: o.orderId, makerSalt: o.order.makerSalt });
 }
 
-/** STRK for a LayerZero quote plus the configured headroom (always > 0,
- *  so a fee's change note is never empty). */
-export function withHeadroom(quote: bigint): bigint {
-  // Nothing to pay is nothing to pay. On testnet the relay endpoint quotes
-  // zero, and rounding that up to 1 wei made the app demand a STRK prepayment
-  // for a message that costs nothing.
-  if (quote <= 0n) return 0n;
-  const pct = BigInt(Math.max(1, Math.round(deployment().fees.headroomPct)));
-  return quote + (quote * pct) / 100n + 1n;
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * The paymaster (the keeper) pays a deposit's or exit's message fee (STRK)
+ * into the note's credit, so the user never needs STRK. Returns once the
+ * credit covers what the message will be charged (`quote`, asked fresh).
+ * The keeper sends from the account its schedule also uses, so a request can
+ * lose a nonce race; asking again is the answer.
+ */
+export async function paymasterFundNote(
+  noteId: bigint,
+  purpose: "deposit" | "exit",
+  amount: bigint,
+  quote: () => Promise<bigint>,
+): Promise<void> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await intake("/fund-note", { noteId: hex(noteId), purpose, amount: amount.toString() });
+      break;
+    } catch (e) {
+      if (attempt >= 3) throw e;
+      await sleep(5_000);
+    }
+  }
+  const deadline = Date.now() + 120_000;
+  while ((await noteCredit(noteId)) < (await quote())) {
+    if (Date.now() > deadline) throw new Error("The message fee is not covered yet. Try again in a minute.");
+    await sleep(3_000);
+  }
 }
 
 export const txLink = (tx: string): string => `${explorer()}/tx/${tx}`;

@@ -5,6 +5,7 @@
 // Serde order (hyperveil/starknet/src).
 
 import { Account, RpcProvider, hash, type Call } from "starknet";
+import type { NoteFeeFacts, NoteFeePurpose } from "./noteFees.js";
 
 export interface OrderRecord {
   makerCommitment: bigint;
@@ -85,6 +86,49 @@ export class StarknetSide {
     const { transaction_hash } = await this.account.execute(calls);
     await this.provider.waitForTransaction(transaction_hash);
     return transaction_hash;
+  }
+
+  /** What the paymaster checks before paying a deposit's or exit's message
+   *  fee into `noteId`'s credit (see noteFees.ts). `amount` is the deposit's
+   *  USDC (6 dp) or the exit's twin amount; it only feeds the quote. */
+  async noteFeeFacts(
+    noteId: bigint,
+    purpose: NoteFeePurpose,
+    amount: bigint,
+    returnValue: bigint,
+  ): Promise<NoteFeeFacts> {
+    const note = hex(noteId);
+    const [openNote, stored, credit, expected, used, quote] = await Promise.all([
+      this.call(this.pool, "get_open_note", [note]),
+      this.call(this.pool, "get_notes_batch", ["0x1", note]), // [len, encrypted_amount]
+      this.call(this.gateway, "note_credit", [note]),
+      purpose === "deposit"
+        ? this.call(this.gateway, "twin_of", ["0x0"]) // USDC's HyperCore token
+        : this.call(this.exitVault, "usdc"),
+      purpose === "deposit"
+        ? this.call(this.gateway, "deposit_of_note", [note])
+        : this.call(this.exitVault, "exit_of_note", [note]),
+      purpose === "deposit"
+        ? this.call(this.gateway, "quote_deposit", [note, hex(amount), hex(returnValue)])
+        : this.call(this.gateway, "quote_exit", [hex(amount), "0x0"]),
+    ]);
+    return {
+      openNoteToken: openNote[0],
+      noteValue: stored[1],
+      expectedToken: expected[0],
+      used: used[0],
+      credit: credit[0] + (credit[1] << 128n),
+      quote: quote[0] + (quote[1] << 128n), // MessagingFee.native_fee
+    };
+  }
+
+  /** The paymaster paying a deposit's or exit's message fee into the note's
+   *  credit, from the keeper's STRK. */
+  fundNote(noteId: bigint, amount: bigint): Promise<string> {
+    return this.send([
+      { contractAddress: this.strk, entrypoint: "approve", calldata: [this.gateway, ...u256(amount)] },
+      { contractAddress: this.gateway, entrypoint: "fund_note", calldata: [hex(noteId), ...u256(amount)] },
+    ]);
   }
 
   /** Whether the permission manager lets `account` hold HyperVeil assets. */

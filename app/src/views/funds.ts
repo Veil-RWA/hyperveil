@@ -1,8 +1,7 @@
 // Deposit and Withdraw.
 //
 // Both sides start from the user's balances INSIDE the Veil pool: real USDC
-// (and the STRK that pays HyperVeil's message fees) live there as private
-// notes. So each page has two parts.
+// lives there as private notes. So each page has two parts.
 //
 // Deposit:  "Add USDC to Veil"       from the wallet, or from a STRK20 balance
 //           "Send USDC to Hyperliquid"  a proven invoke: the entry helper burns
@@ -13,27 +12,26 @@
 //           fills the private USDC note the exit named — nothing to claim.
 //           "Take USDC out of Veil"  a proven withdrawal to any address.
 //
-// Every message fee is prepaid from the user's private STRK, through the fee
-// adapter, and keyed to the note it pays for, so no public wallet is ever tied
-// to a deposit or a withdrawal.
+// Every message fee (STRK) is paid by the paymaster, the keeper, into the
+// credit of the note it pays for: the user never needs STRK, and no wallet of
+// theirs is tied to a deposit or a withdrawal.
 
-import { FUND_NOTE, INVOKE_CHANGE, strk20ToVeilActions, toUnits } from "veil-sdk";
+import { INVOKE_CHANGE, strk20ToVeilActions, toUnits } from "veil-sdk";
 import {
   $,
   connect,
   ensureIdentity,
   ensureRegistered,
+  paymasterFundNote,
   privateBalance,
   refreshAccount,
   requireDeployed,
-  requireFeeBalance,
   requireKyc,
   requireSession,
   run,
   S,
   toast,
   txLink,
-  withHeadroom,
 } from "../app";
 import {
   EXIT_DELIVERED,
@@ -74,7 +72,6 @@ import {
   exit,
   isEmptyOpenNote,
   noteValue,
-  payFee,
   withdrawFromVeil,
 } from "../veil";
 import { approve } from "../wallet";
@@ -379,7 +376,7 @@ export function renderDeposit(root: HTMLElement): void {
       <div class="line"><span>Private USDC in Veil</span><span id="dp-held"${
         heldUsdc !== undefined && heldUsdc > INVOKE_CHANGE ? ` class="link" title="Send all of it"` : ""
       }>${usdcBal} USDC</span></div>
-      <div class="line"><span>Message fee (private STRK)</span><span id="dp-fee">—</span></div>
+      <div class="line"><span>Message fee</span><span id="dp-fee">—</span></div>
       <div class="line"><span id="dp-cctp-label">Circle transfer fee</span><span id="dp-cctp">—</span></div>
       <div class="line"><span>Tradable on Hyperliquid</span><span id="dp-get">—</span></div>
     </div>
@@ -438,10 +435,8 @@ async function estimateDeposit(value: string): Promise<void> {
   get.textContent = `${units(amount6 - (cut ?? 0n), 6, 6)} USDC`;
   if (!S.deployed) return;
   try {
-    const q = withHeadroom(await quoteDeposit(1n, amount6, BigInt(deployment().fees.returnValue)));
-    // Zero is the honest answer on a network where the message costs nothing;
-    // "≤ 0 STRK" reads like a failed lookup.
-    fee.textContent = q === 0n ? "none" : `≤ ${units(q, 18, 4)} STRK`;
+    // The paymaster pays it: nothing comes out of the user's balance.
+    fee.textContent = "paid for you";
   } catch {
     fee.textContent = "unavailable";
   }
@@ -483,12 +478,11 @@ async function deposit(value: string): Promise<void> {
       store.setPendingDepositNote(hex(noteId));
     }
 
-    const need = withHeadroom(await quoteDeposit(noteId, amount6, BigInt(d.fees.returnValue)));
-    const have = await noteCredit(noteId);
-    if (have < need) {
-      requireFeeBalance(need - have);
-      a.line(`Prepaying the message fee from your private STRK (${units(need - have, 18, 4)} STRK)`);
-      await payFee(session, id, FUND_NOTE, noteId, need - have, a);
+    const note = noteId;
+    const quote = () => quoteDeposit(note, amount6, BigInt(d.fees.returnValue));
+    if ((await noteCredit(note)) < (await quote())) {
+      a.line("The paymaster is paying the message fee");
+      await paymasterFundNote(note, "deposit", amount6, quote);
     }
 
     a.line("Proving the transfer (sign the authorization in your wallet)");
@@ -541,7 +535,7 @@ export function renderWithdraw(root: HTMLElement): void {
       }>${
         !S.identity ? `<button class="btn btn-ghost btn-sm" id="wd-unlock">Unlock</button>` : bal === undefined || !twin ? "…" : `${units(bal, twin.decimals, 2)} USDC`
       }</span></div>
-      <div class="line"><span>Message fee (private STRK)</span><span id="wd-fee">—</span></div>
+      <div class="line"><span>Message fee</span><span id="wd-fee">—</span></div>
     </div>
     <button class="btn btn-gold btn-block" id="wd-go" ${S.busy || !S.deployed ? "disabled" : ""}>${S.deployed ? "Bring back to Veil" : "Opens when HyperVeil is deployed"}</button>
     <div class="hint">Whole cents only: USDC crosses by CCTP with 6 decimals.</div>`;
@@ -619,8 +613,7 @@ async function estimateExit(value: string): Promise<void> {
   try {
     const amount = exitAmount(value);
     if (amount === 0n) throw new Error();
-    const q = withHeadroom(await quoteExit(amount));
-    fee.textContent = q === 0n ? "none" : `≤ ${units(q, 18, 4)} STRK`;
+    fee.textContent = "paid for you";
   } catch {
     fee.textContent = "—";
   }
@@ -659,12 +652,11 @@ async function withdraw(value: string): Promise<void> {
       store.setPendingExitNote(hex(noteId));
     }
 
-    const need = withHeadroom(await quoteExit(amount));
-    const have = await noteCredit(noteId);
-    if (have < need) {
-      requireFeeBalance(need - have);
-      a.line(`Prepaying the message fee from your private STRK (${units(need - have, 18, 4)} STRK)`);
-      await payFee(session, id, FUND_NOTE, noteId, need - have, a);
+    const note = noteId;
+    const quote = () => quoteExit(amount);
+    if ((await noteCredit(note)) < (await quote())) {
+      a.line("The paymaster is paying the message fee");
+      await paymasterFundNote(note, "exit", amount, quote);
     }
 
     a.line("Proving the withdrawal (sign the authorization in your wallet)");
