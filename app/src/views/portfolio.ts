@@ -188,6 +188,14 @@ interface Status {
   actions: Array<"cancel" | "request-cancel" | "reclaim" | "opening">;
 }
 
+/** Hyperliquid takes a buy's fee in the token bought, so an order routed there
+ *  can end short of its want by up to the fee bound (`maxFeeBps`) and never
+ *  reach FILLED on-chain. Within that bound it has filled. */
+function filledBarFee(o: PoolOrder): boolean {
+  const bps = BigInt(deployment().fees.maxFeeBps);
+  return o.received > 0n && o.received * 10_000n >= o.wantAmount * (10_000n - bps);
+}
+
 function statusOf(v: OrderView): Status {
   const o = v.pool;
   const s = v.stored;
@@ -196,7 +204,13 @@ function statusOf(v: OrderView): Status {
   const filled = o.wantAmount ? Number((o.received * 10_000n) / o.wantAmount) / 100 : 0;
   const expired = o.expiry * 1000 < Date.now();
   if (!s.openingSent && o.status === ORDER_OPEN) actions.push("opening");
-  if (o.status === ORDER_CANCELLED) return { label: "Cancelled", tone: "", filled, actions: [] };
+  if (o.status === ORDER_CANCELLED) {
+    // After fills, a cancel only took back the escrow the fills did not use.
+    if (o.received === 0n) return { label: "Cancelled", tone: "", filled, actions: [] };
+    return filledBarFee(o)
+      ? { label: "Filled · unused escrow returned", tone: "good", filled, actions: [] }
+      : { label: "Partly filled · rest returned", tone: "", filled, actions: [] };
+  }
   if (o.status === ORDER_FILLED) {
     if (!v.routed && o.escrowRemaining > 0n) actions.push("reclaim");
     return { label: v.routed ? "Filled · settling" : "Filled", tone: "good", filled, actions };
@@ -212,8 +226,18 @@ function statusOf(v: OrderView): Status {
       actions,
     };
   }
+  if (filledBarFee(o)) {
+    actions.push("reclaim");
+    return { label: "Filled · reclaim the unused escrow", tone: "good", filled, actions };
+  }
   actions.push("cancel");
-  const label = s.cancelRequested ? "Back from Hyperliquid · cancel to finish" : expired ? "Expired · resting in Veil" : "Resting in Veil";
+  const label = s.cancelRequested
+    ? "Back from Hyperliquid · cancel to finish"
+    : o.received > 0n
+      ? "Partly filled · resting in Veil"
+      : expired
+        ? "Expired · resting in Veil"
+        : "Resting in Veil";
   return { label, tone: "", filled, actions };
 }
 
