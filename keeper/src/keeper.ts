@@ -99,6 +99,7 @@ export class Keeper {
     proverEndpoint: string | undefined,
     rpcUrl: string,
     masterAddress?: string,
+    transport?: "sse" | "job",
   ): VeilDvpExchange {
     const account = sn.account;
     const signer: StarknetAuthorizationSigner = {
@@ -107,7 +108,7 @@ export class Keeper {
       signMessage: (td) => account.signMessage(td as never) as never,
       getChainId: async () => String(await sn.provider.getChainId()),
     };
-    return new VeilDvpExchange({ veilAddress: sn.pool, signer, endpoint: proverEndpoint, rpcUrl, masterAddress });
+    return new VeilDvpExchange({ veilAddress: sn.pool, signer, endpoint: proverEndpoint, transport, rpcUrl, masterAddress });
   }
 
   acceptOpening(opening: Opening): void {

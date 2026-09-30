@@ -76,7 +76,7 @@ export async function handler(): Promise<{ ok: boolean; skipped?: string; log: s
       evm,
       new HyperliquidApi(cfg.hlApiUrl, { wallet: evm.wallet, isMainnet: cfg.network === "mainnet" }),
       new IrisApi(cfg.irisApiUrl),
-      Keeper.exchangeFor(sn, cfg.proverEndpoint, cfg.starknet.rpcUrl, cfg.proverMaster),
+      Keeper.exchangeFor(sn, cfg.proverEndpoint, cfg.starknet.rpcUrl, cfg.proverMaster, cfg.proverTransport),
       state,
       cfg.params,
       say,

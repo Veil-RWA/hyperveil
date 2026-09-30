@@ -199,6 +199,9 @@ function main() {
     `HV_MAX_FEE_BPS=${MAX_FEE_BPS}`,
     `HV_RETURN_VALUE=${returnValue}`,
     `PROVER_ENDPOINT=${args.prover || process.env.PROVER_ENDPOINT || ''}`,
+    // The same transport the app uses: the keeper's crossings and applied
+    // fills go to the same prover, and the wrong transport is a 404.
+    `VEIL_PROVER_TRANSPORT=${app.prover.transport}`,
     `VEIL_MASTER_ACCOUNT_ADDRESS=${app.prover.masterAddress}`,
     `HV_INTAKE_PORT=${args['intake-port'] ?? 8787}`,
     '',

@@ -38,6 +38,11 @@ export interface KeeperConfig {
   hlApiUrl: string;
   irisApiUrl: string;
   proverEndpoint?: string;
+  /** How the prover is reached: "job" for the deployed ECS service (submit to
+   *  /prove, poll /jobs/{id}), "sse" for a long-running prover. It must match
+   *  the deployment: the wrong one answers 404 on every crossing and every
+   *  applied fill. The app reads the same setting (prover.transport). */
+  proverTransport?: "sse" | "job";
   /** The account the prover submits settles from. Without it every proven
    *  action (crossing, applying a fill) dies with "no master account
    *  configured" — the same value the app and veilx carry. */
@@ -49,6 +54,14 @@ export interface KeeperConfig {
   pollMs: number;
   stateFile: string;
   intakePort: number;
+}
+
+/** `VEIL_PROVER_TRANSPORT`, the SDK's own variable: "job" or "sse", or unset
+ *  (the SDK's default, "sse"). Anything else is a typo worth stopping on. */
+function proverTransport(v: string | undefined): "sse" | "job" | undefined {
+  if (!v) return undefined;
+  if (v === "sse" || v === "job") return v;
+  throw new Error(`VEIL_PROVER_TRANSPORT must be "job" or "sse", not "${v}"`);
 }
 
 /** `HV_OPEN_ALLOWLIST=1` turns the whole KYC gate into a formality, so it is
@@ -125,6 +138,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): KeeperConfig {
     hlApiUrl: env.HL_API_URL ?? HL_API[network],
     irisApiUrl: env.IRIS_API_URL ?? IRIS_API[network],
     proverEndpoint: env.PROVER_ENDPOINT,
+    proverTransport: proverTransport(env.VEIL_PROVER_TRANSPORT),
     proverMaster: env.VEIL_MASTER_ACCOUNT_ADDRESS ?? env.PROVER_MASTER,
     openAllowlist: open,
     params: {
