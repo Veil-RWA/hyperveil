@@ -5,7 +5,6 @@
 // orders first; whatever is left goes to Hyperliquid through the omnibus,
 // and fills come back into the order's private receive note.
 
-import { FUND_ORDER } from "veil-sdk";
 import {
   $,
   connect,
@@ -14,21 +13,18 @@ import {
   refresh,
   refreshAccount,
   requireDeployed,
-  requireFeeBalance,
   requireKyc,
   requireSession,
   run,
   S,
   sendOpening,
   toast,
-  withHeadroom,
 } from "../app";
-import { quoteRouting } from "../chain";
 import { deployment, twinOf, type TwinConfig } from "../config";
 import { ago, compactUsd, escapeHtml, hex, pct, price, units } from "../format";
 import { priceProblem, sizeProblem, type Market } from "../market";
 import { MIN_NOTIONAL_USDC, draftOrder, type Draft, type FormInput, type OrderKind } from "../orders";
-import { payFee, postOrder } from "../veil";
+import { postOrder } from "../veil";
 
 const form: FormInput = { side: "buy", kind: "limit", size: "", price: "", slippage: 0.01 };
 let search = "";
@@ -465,7 +461,6 @@ async function onSubmit(): Promise<void> {
     requireDeployed();
     requireKyc();
     const session = requireSession();
-    const d = deployment();
     const id = await ensureRegistered(a);
 
     a.line("Proving the order (sign the authorization in your wallet)");
@@ -507,15 +502,9 @@ async function onSubmit(): Promise<void> {
     const stored = store.orders.find((o) => o.orderId === orderId)!;
     await sendOpening(stored);
     store.updateOrder(orderId, { openingSent: true });
+    // The Hyperliquid route fee (STRK) is paid by the keeper, the paymaster:
+    // nothing to prepay here.
     a.line("Keeper has the order: crossing inside Veil first");
-
-    if (draft.notional >= MIN_NOTIONAL_USDC) {
-      const budget = withHeadroom(await quoteRouting(posted.orderId, m.asset, BigInt(d.fees.returnValue)));
-      a.line(`Prepaying the Hyperliquid route fee from your private STRK (${units(budget, 18, 4)} STRK)`);
-      requireFeeBalance(budget);
-      await payFee(session, id, FUND_ORDER, posted.orderId, budget, a);
-      store.updateOrder(orderId, { feeFunded: budget.toString() });
-    }
     return "Order placed. Track it in Portfolio.";
   });
   if (ok) {

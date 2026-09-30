@@ -42,7 +42,6 @@ function world() {
   const evmRouteStatus = new Map<string, bigint>();
   const hlStatus = new Map<bigint, { status: string; oid?: bigint }>();
   const fills: unknown[] = [];
-  const credits = new Map<bigint, bigint>();
   // The exit vault's view: 1 registered, 2 funded (note not filled), 3 delivered.
   const exitStatus = new Map<bigint, number>();
   const sn = {
@@ -57,8 +56,6 @@ function world() {
     currentRoute: async (id: bigint) => currentRoute.get(id) ?? 0n,
     routeOf: async (r: bigint) => ({ escrow: 0n, cumDraw: 0n, cumDeliver: 0n, seq: 0n, ...gatewayRoutes.get(r)! }),
     receiptPending: async (r: bigint) => receiptsPending.has(r),
-    quoteRoute: async () => 1000n,
-    orderCredit: async (id: bigint) => credits.get(id) ?? 0n,
     routeOrder: async (id: bigint, hl: { px: bigint; sz: bigint; isBuy: boolean; tif: number }) => {
       calls.push(`route ${id} ${hl.isBuy ? "buy" : "sell"} px=${hl.px} sz=${hl.sz} tif=${hl.tif}`);
       const r = 0x7000n + id;
@@ -153,14 +150,13 @@ function world() {
   };
   const state = emptyState(0, 0);
   const keeper = new Keeper(sn as never, evm as never, hl as never, iris as never, exchange as never, state, PARAMS, () => {});
-  return { keeper, state, calls, orders, routed, gatewayRoutes, currentRoute, receiptsPending, evmRouteStatus, hlStatus, fills, credits, exitStatus };
+  return { keeper, state, calls, orders, routed, gatewayRoutes, currentRoute, receiptsPending, evmRouteStatus, hlStatus, fills, exitStatus };
 }
 
 function post(w: ReturnType<typeof world>, id: bigint, o: OrderRecord, tif: 1 | 2 | 3 = 2) {
   w.orders.set(id, o);
   w.state.orders[key(id)] = { postedAt: Number(id) };
   w.keeper.acceptOpening(opening(id, tif));
-  w.credits.set(id, 1000n); // the user prepaid routing from STRK20
 }
 
 const SELL = order({
@@ -183,12 +179,11 @@ test("an order Veil cannot cross is routed to Hyperliquid at its limit net of th
   assert.ok(w.state.routes[key(0x7001n)]);
 });
 
-test("an order whose routing fee is not prepaid is not routed", async () => {
+test("the keeper pays the routing fee: an order with no prepaid credit is routed", async () => {
   const w = world();
   post(w, 1n, order({}));
-  w.credits.set(1n, 999n);
   await w.keeper.crossAndRoute();
-  assert.deepEqual(w.calls, []);
+  assert.deepEqual(w.calls, ["route 1 buy px=2497500000 sz=4000000000 tif=2"]);
 });
 
 test("a maker's cancel request pulls its order back, and only the maker's", async () => {

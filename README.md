@@ -86,10 +86,10 @@ The keeper then:
   `gateway.release` returns the unspent escrow to the order. The maker
   reclaims it privately with `cancel_order`.
 
-Routing fees are prepaid. After posting, the maker pays STRK into the order's
-credit (`gateway.fund_order`) from their private STRK, through the fee
-adapter. The keeper routes an order only once its credit covers `quote_route`;
-PLACE and CANCEL are paid from it.
+Routing fees are paid by the keeper, the paymaster. The gateway takes the
+PLACE and CANCEL fees (STRK) from any credit the order already has
+(`gateway.fund_order`), then from the keeper's account, so a user never needs
+STRK to trade.
 
 Cancel: the maker asks the keeper, or anyone may cancel once the order has
 expired (`cancel_route`). CANCEL makes the omnibus cancel by cloid. The
@@ -177,7 +177,7 @@ flows above:
 
 | Page | What it does |
 |---|---|
-| Trade | Market (IOC), limit (GTC) and post-only (ALO) orders. Posts the DvP order (proven), hands the keeper the opening, then prepays the route fee from STRK20 through a shadow account. Orders under 10 USDC are only crossed inside Veil. |
+| Trade | Market (IOC), limit (GTC) and post-only (ALO) orders. Posts the DvP order (proven), hands the keeper the opening; the keeper pays the route fee. Orders under 10 USDC are only crossed inside Veil. |
 | Portfolio | Private balances and orders, decrypted in the browser with the Veil key. Cancel runs a proven `cancel_order`. For a routed order, it first asks the keeper to pull the order back from Hyperliquid. |
 | Deposit | Adds USDC (or STRK) to Veil from the wallet or from STRK20, and sends USDC to Hyperliquid: opens the USDC-twin note (proven), prepays its fee from private STRK, then one proven invoke. On testnet it also has **Claim USDC faucet**, a link to [Circle's faucet](https://faucet.circle.com/) — 20 USDC every 2 hours on Starknet Sepolia. |
 | Withdraw | Brings USDC back: opens the note it lands in (proven), prepays its fee, then one proven invoke — no claim step. Also takes USDC out of Veil to any address. "Find my withdrawals" recovers exits this browser lost track of, by matching the vault's exits against the notes the user's key owns. |

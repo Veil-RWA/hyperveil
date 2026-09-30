@@ -150,20 +150,6 @@ export class StarknetSide {
     };
   }
 
-  async orderCredit(orderId: bigint): Promise<bigint> {
-    const [low, high] = await this.call(this.gateway, "order_credit", [hex(orderId)]);
-    return low + (high << 128n);
-  }
-
-  async quoteRoute(
-    orderId: bigint,
-    hl: { asset: number; isBuy: boolean; px: bigint; sz: bigint; tif: number },
-    returnValue: bigint,
-  ): Promise<bigint> {
-    const args = [hex(orderId), hex(hl.asset), hl.isBuy ? "0x1" : "0x0", hex(hl.px), hex(hl.sz), hex(hl.tif)];
-    return (await this.call(this.gateway, "quote_route", [...args, hex(returnValue)]))[0];
-  }
-
   async receiptPending(receiptId: bigint): Promise<boolean> {
     return (await this.call(this.gateway, "receipt_of", [hex(receiptId)]))[4] !== 0n;
   }
@@ -191,8 +177,9 @@ export class StarknetSide {
 
   // ── Keeper transactions ──────────────────────────────────────────────────
 
-  /** Routes an order. The fee comes from the order's prepaid credit; the
-   *  approval covers the quote in case the credit fell short since checked. */
+  /** Routes an order, paying its PLACE fee: the gateway uses the order's
+   *  credit first (if any), then this account's STRK, which the approval
+   *  covers in full. */
   async routeOrder(
     orderId: bigint,
     hl: { asset: number; isBuy: boolean; px: bigint; sz: bigint; tif: number },

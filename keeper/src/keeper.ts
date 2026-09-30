@@ -361,14 +361,9 @@ export class Keeper {
         this.log(`not routing ${key(o.orderId)}: ${decision.reason}`);
         continue;
       }
-      // The user pays: an order is routed only once its own prepaid credit
-      // (funded from STRK held in the pool, through the fee adapter) covers
-      // the message.
-      const fee = await this.sn.quoteRoute(o.orderId, decision.order, this.params.returnValue);
-      if ((await this.sn.orderCredit(o.orderId)) < fee) {
-        this.log(`not routing ${key(o.orderId)}: routing fee not prepaid`);
-        continue;
-      }
+      // The keeper is the paymaster: the gateway takes the PLACE fee (STRK)
+      // from any credit the order already has, then from this account, so a
+      // user never needs STRK to trade.
       const tx = await this.sn.routeOrder(o.orderId, decision.order, this.params.returnValue);
       const routeId = await this.sn.currentRoute(o.orderId);
       await this.trackRoute(o.orderId, routeId);

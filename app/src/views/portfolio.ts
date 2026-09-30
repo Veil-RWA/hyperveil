@@ -2,7 +2,6 @@
 // Veil / Hyperliquid state, and deposits. Order records live in this browser;
 // their state is read from the chain.
 
-import { FUND_ORDER } from "veil-sdk";
 import {
   $,
   connect,
@@ -10,7 +9,6 @@ import {
   ensureRegistered,
   refresh,
   refreshAccount,
-  requireFeeBalance,
   requireSession,
   run,
   S,
@@ -18,7 +16,6 @@ import {
   sendOpening,
   toast,
   txLink,
-  withHeadroom,
 } from "../app";
 import {
   DEPOSIT_CREDITED,
@@ -30,9 +27,7 @@ import {
   ROUTE_OPEN,
   currentRoute,
   depositOf,
-  orderCredit,
   poolOrder,
-  quoteRouting,
   venueRoute,
   type DepositRecord,
   type PoolOrder,
@@ -41,16 +36,14 @@ import {
 import { cctpLabel, cctpStage, type CctpStage } from "../cctp";
 import { deployment, usdcTwin } from "../config";
 import { ago, escapeHtml, units } from "../format";
-import { MIN_NOTIONAL_USDC } from "../orders";
 import type { StoredOrder } from "../store";
-import { cancelOrder, payFee } from "../veil";
+import { cancelOrder } from "../veil";
 
 interface OrderView {
   stored: StoredOrder;
   pool?: PoolOrder;
   routed: boolean;
   route: RouteRecord | null;
-  credit?: bigint;
 }
 
 let orderViews: OrderView[] | null = null;
@@ -91,13 +84,12 @@ async function load(): Promise<void> {
     orderViews = await Promise.all(
       S.store.orders.map(async (stored): Promise<OrderView> => {
         const id = BigInt(stored.orderId);
-        const [pool, vr, route, credit] = await Promise.all([
+        const [pool, vr, route] = await Promise.all([
           poolOrder(id).catch(() => undefined),
           venueRoute(id).catch(() => ({ routed: false })),
           currentRoute(id).catch(() => null),
-          orderCredit(id).catch(() => undefined),
         ]);
-        return { stored, pool, routed: vr.routed, route, credit };
+        return { stored, pool, routed: vr.routed, route };
       }),
     );
     depositViews = await Promise.all(
@@ -193,7 +185,7 @@ interface Status {
   label: string;
   tone: "good" | "gold" | "bad" | "";
   filled: number;
-  actions: Array<"cancel" | "request-cancel" | "reclaim" | "opening" | "fund">;
+  actions: Array<"cancel" | "request-cancel" | "reclaim" | "opening">;
 }
 
 function statusOf(v: OrderView): Status {
@@ -221,8 +213,6 @@ function statusOf(v: OrderView): Status {
     };
   }
   actions.push("cancel");
-  const notional = Number(s.size) * Number(s.price);
-  if (notional >= MIN_NOTIONAL_USDC && v.credit !== undefined && v.credit === 0n) actions.push("fund");
   const label = s.cancelRequested ? "Back from Hyperliquid · cancel to finish" : expired ? "Expired · resting in Veil" : "Resting in Veil";
   return { label, tone: "", filled, actions };
 }
@@ -249,8 +239,7 @@ function drawOrders(): void {
               a === "cancel" ? btn(a, "Cancel") :
               a === "request-cancel" ? btn(a, "Cancel") :
               a === "reclaim" ? btn(a, "Reclaim leftover") :
-              a === "opening" ? btn(a, "Send to keeper") :
-              btn(a, "Prepay route fee"),
+              btn(a, "Send to keeper"),
             )
             .join(" ");
           return `<tr>
@@ -281,7 +270,6 @@ async function act(action: Status["actions"][number], orderId: string): Promise<
     "request-cancel": "Pull order back from Hyperliquid",
     reclaim: "Reclaim leftover escrow",
     opening: "Send order to keeper",
-    fund: "Prepay route fee",
   } as const;
   const ok = await run(titles[action], async (a) => {
     const session = requireSession();
@@ -294,16 +282,6 @@ async function act(action: Status["actions"][number], orderId: string): Promise<
       await sendCancel(o);
       store.updateOrder(orderId, { cancelRequested: true });
       return "The keeper cancels it on Hyperliquid; once released, cancel again here to take back the rest.";
-    }
-    if (action === "fund") {
-      const d = deployment();
-      const budget = withHeadroom(await quoteRouting(BigInt(orderId), o.asset, BigInt(d.fees.returnValue)));
-      const id = await ensureRegistered(a);
-      a.line(`Paying ${units(budget, 18, 4)} STRK from your private balance`);
-      requireFeeBalance(budget);
-      await payFee(session, id, FUND_ORDER, BigInt(orderId), budget, a);
-      store.updateOrder(orderId, { feeFunded: budget.toString() });
-      return;
     }
     // cancel / reclaim: a proven cancel_order returns the escrow to a private note.
     const id = await ensureRegistered(a);
