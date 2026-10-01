@@ -20,6 +20,8 @@ import {
   sendOpening,
   toast,
 } from "../app";
+import { PriceChart } from "../chart";
+import { INTERVALS, isInterval, type Interval } from "../chartData";
 import { deployment, twinOf, type TwinConfig } from "../config";
 import { ago, compactUsd, escapeHtml, hex, pct, price, units } from "../format";
 import { priceProblem, sizeProblem, type Market } from "../market";
@@ -31,6 +33,20 @@ let search = "";
 let formCoin: string | null = null;
 
 const COIN_KEY = "hyperveil:coin";
+const INTERVAL_KEY = "hyperveil:interval";
+
+let chart: PriceChart | null = null;
+let interval: Interval = savedInterval();
+
+function savedInterval(): Interval {
+  try {
+    const v = localStorage.getItem(INTERVAL_KEY);
+    if (isInterval(v)) return v;
+  } catch {
+    /* ignore */
+  }
+  return "15m";
+}
 
 export function selectedMarket(): Market | undefined {
   return S.markets.find((m) => m.coin === S.coin);
@@ -84,6 +100,15 @@ export function renderTrade(root: HTMLElement): void {
       </aside>
       <section class="center">
         <div class="market-head panel" id="mk-head"></div>
+        <div class="chart panel">
+          <div class="chart-bar">
+            <div class="intervals" id="chart-intervals">${INTERVALS.map(
+              (i) => `<button data-interval="${i}" class="${i === interval ? "is-active" : ""}">${i}</button>`,
+            ).join("")}</div>
+            <span class="chip">Hyperliquid</span>
+          </div>
+          <div class="chart-canvas" id="chart"><div class="chart-empty" id="chart-empty" hidden>No trades in this range yet.</div></div>
+        </div>
         <div class="book-trades">
           <div class="book panel">
             <div class="section-title"><h2>Order book</h2><span class="chip" id="book-age">Hyperliquid</span></div>
@@ -101,8 +126,44 @@ export function renderTrade(root: HTMLElement): void {
     search = (e.target as HTMLInputElement).value;
     updateMarketList();
   });
+  mountChart();
   formCoin = null;
   updateTrade();
+}
+
+/** Leaving the trade page: close the chart and its websocket. */
+export function closeTrade(): void {
+  chart?.destroy();
+  chart = null;
+}
+
+function mountChart(): void {
+  closeTrade();
+  chart = new PriceChart($("chart"), deployment().hyperliquid.api, interval, (empty) => {
+    const note = document.getElementById("chart-empty");
+    if (note) note.hidden = !empty;
+  });
+  document.querySelectorAll<HTMLButtonElement>("#chart-intervals button").forEach((b) =>
+    b.addEventListener("click", () => {
+      const next = b.dataset.interval;
+      if (!isInterval(next)) return;
+      interval = next;
+      try {
+        localStorage.setItem(INTERVAL_KEY, next);
+      } catch {
+        /* ignore */
+      }
+      document
+        .querySelectorAll<HTMLButtonElement>("#chart-intervals button")
+        .forEach((x) => x.classList.toggle("is-active", x.dataset.interval === next));
+      chart?.setInterval(next);
+    }),
+  );
+}
+
+function updateChart(): void {
+  const m = selectedMarket();
+  if (chart && m) chart.show(m.coin, m.base.szDecimals, Number(m.mid ?? 0));
 }
 
 /** Redraws the live parts; leaves the form's inputs alone. */
@@ -110,6 +171,7 @@ export function updateTrade(): void {
   if (!document.getElementById("mk-list")) return;
   updateMarketList();
   updateHead();
+  updateChart();
   updateBook();
   updateTrades();
   updateAges();

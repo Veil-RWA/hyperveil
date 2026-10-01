@@ -7,7 +7,7 @@ import { escapeHtml, short } from "./format";
 import { HyperliquidInfo } from "./market";
 import { renderDeposit, renderWithdraw, pollDeposit, pollWithdraw } from "./views/funds";
 import { pollPortfolio, renderPortfolio, updatePortfolio } from "./views/portfolio";
-import { pickDefaultMarket, renderTrade, updateTrade } from "./views/trade";
+import { closeTrade, pickDefaultMarket, renderTrade, updateTrade } from "./views/trade";
 import { restoreWallet } from "./wallet";
 import type { Tab } from "./app";
 
@@ -24,6 +24,7 @@ function show(tab: Tab): void {
   document.querySelectorAll<HTMLButtonElement>("#tabs .tab").forEach((b) => b.classList.toggle("is-active", b.dataset.tab === tab));
   if (location.hash !== `#${tab}`) history.replaceState(null, "", `#${tab}`);
   const root = view();
+  if (tab !== "trade") closeTrade();
   if (tab === "trade") renderTrade(root);
   else if (tab === "portfolio") renderPortfolio(root);
   else if (tab === "deposit") renderDeposit(root);
