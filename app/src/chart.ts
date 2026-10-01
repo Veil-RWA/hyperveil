@@ -13,8 +13,10 @@ import {
   CrosshairMode,
   HistogramSeries,
   createChart,
+  type CandlestickData,
   type IChartApi,
   type ISeriesApi,
+  type MouseEventParams,
 } from "lightweight-charts";
 import {
   DOWN,
@@ -24,9 +26,11 @@ import {
   priceDecimals,
   toBars,
   wsUrl,
+  type Bar,
   type HlCandle,
   type Interval,
 } from "./chartData";
+import { escapeHtml } from "./format";
 
 /** Bars of history: plenty to scroll back through, far under the API's 5000. */
 const HISTORY_BARS = 500;
@@ -40,7 +44,10 @@ export class PriceChart {
   private readonly candles: ISeriesApi<"Candlestick">;
   private readonly volume: ISeriesApi<"Histogram">;
   private coin: string | null = null;
+  private label = "";
   private decimals = -1;
+  /** The newest bar: what the legend shows while the crosshair is away. */
+  private lastBar: Bar | null = null;
   /** Bumped on every change of pair or interval: an answer for an earlier
    *  one arrives late and is dropped. */
   private generation = 0;
@@ -56,6 +63,8 @@ export class PriceChart {
     private interval: Interval,
     /** Tells the page whether the range in view has any trades at all. */
     private readonly onEmpty: (empty: boolean) => void = () => {},
+    /** Where the OHLC legend goes (top left of the chart, as on Hyperliquid). */
+    private readonly legend?: HTMLElement,
   ) {
     this.chart = createChart(el, {
       autoSize: true,
@@ -79,7 +88,9 @@ export class PriceChart {
       wickUpColor: UP,
       wickDownColor: DOWN,
     });
-    this.candles.priceScale().applyOptions({ scaleMargins: { top: 0.08, bottom: 0.26 } });
+    // Room above the highest candle for the legend, which wraps on a phone.
+    const top = el.clientWidth < 600 ? 0.16 : 0.08;
+    this.candles.priceScale().applyOptions({ scaleMargins: { top, bottom: 0.26 } });
     // Volume on its own overlay scale along the bottom, as on Hyperliquid.
     this.volume = this.chart.addSeries(HistogramSeries, {
       priceFormat: { type: "volume" },
@@ -88,21 +99,27 @@ export class PriceChart {
       priceLineVisible: false,
     });
     this.volume.priceScale().applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
+    this.chart.subscribeCrosshairMove((p: MouseEventParams) => {
+      const hovered = p.seriesData.get(this.candles) as CandlestickData | undefined;
+      this.paintLegend(hovered && "open" in hovered ? (hovered as Bar) : this.lastBar);
+    });
     this.connect();
   }
 
   /** Shows `coin`. A no-op when it already does, apart from a price
    *  precision that only became known now (`px` arrives with the markets). */
-  show(coin: string, szDecimals: number, px: number): void {
+  show(coin: string, label: string, szDecimals: number, px: number): void {
     const decimals = priceDecimals(px, szDecimals);
     if (decimals !== this.decimals) {
       this.decimals = decimals;
       this.candles.applyOptions({
         priceFormat: { type: "price", precision: decimals, minMove: 1 / 10 ** decimals },
       });
+      this.paintLegend(this.lastBar);
     }
     if (coin === this.coin) return;
     this.coin = coin;
+    this.label = label;
     this.reload();
   }
 
@@ -128,6 +145,8 @@ export class PriceChart {
     const generation = ++this.generation;
     this.candles.setData([]);
     this.volume.setData([]);
+    this.lastBar = null;
+    this.paintLegend(null);
     this.subscribe();
     void this.loadHistory(generation);
   }
@@ -155,6 +174,8 @@ export class PriceChart {
     this.candles.setData(bars.map((b) => b.bar));
     this.volume.setData(bars.map((b) => b.volume));
     this.chart.timeScale().scrollToRealTime();
+    this.lastBar = bars.length ? bars[bars.length - 1].bar : null;
+    this.paintLegend(this.lastBar);
     this.onEmpty(bars.length === 0);
   }
 
@@ -205,10 +226,38 @@ export class PriceChart {
       try {
         this.candles.update(bar);
         this.volume.update(volume);
+        if (!this.lastBar || bar.time >= this.lastBar.time) {
+          this.lastBar = bar;
+          this.paintLegend(bar);
+        }
         this.onEmpty(false);
       } catch {
         // Older than the last bar drawn (history landed after it): skip.
       }
     }
+  }
+
+  // ── Legend ─────────────────────────────────────────────────────────────────
+
+  /** "HYPE/USDC · 15m · Hyperliquid  O 29.40 H 29.62 L 29.31 C 29.55 +0.15 (+0.51%)" */
+  private paintLegend(bar: Bar | null): void {
+    if (!this.legend) return;
+    const title = `<span class="lg-title">${escapeHtml(this.label)} · ${this.interval} · Hyperliquid</span>`;
+    if (!bar) {
+      this.legend.innerHTML = title;
+      return;
+    }
+    const d = Math.max(0, this.decimals);
+    const f = (v: number) => v.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
+    const diff = bar.close - bar.open;
+    const tone = diff >= 0 ? "buy" : "sell";
+    const pctChange = bar.open ? (diff / bar.open) * 100 : 0;
+    const sign = diff >= 0 ? "+" : "";
+    this.legend.innerHTML = `${title}
+      <span>O<b class="${tone}">${f(bar.open)}</b></span>
+      <span>H<b class="${tone}">${f(bar.high)}</b></span>
+      <span>L<b class="${tone}">${f(bar.low)}</b></span>
+      <span>C<b class="${tone}">${f(bar.close)}</b></span>
+      <b class="${tone}">${sign}${f(diff)} (${sign}${pctChange.toFixed(2)}%)</b>`;
   }
 }

@@ -24,6 +24,9 @@ function show(tab: Tab): void {
   document.querySelectorAll<HTMLButtonElement>("#tabs .tab").forEach((b) => b.classList.toggle("is-active", b.dataset.tab === tab));
   if (location.hash !== `#${tab}`) history.replaceState(null, "", `#${tab}`);
   const root = view();
+  // The trade screen uses the full width, as Hyperliquid's does (the nav and
+  // footer widen with it, so their edges line up).
+  document.body.classList.toggle("wide", tab === "trade");
   if (tab !== "trade") closeTrade();
   if (tab === "trade") renderTrade(root);
   else if (tab === "portfolio") renderPortfolio(root);
@@ -110,7 +113,8 @@ async function pollBook(): Promise<void> {
 function pollAccount(): void {
   if (!S.session || document.hidden) return;
   void refreshAccount();
-  if (S.tab === "portfolio") pollPortfolio();
+  // The trade page's account panel shows the same orders as Portfolio.
+  if (S.tab === "portfolio" || S.tab === "trade") pollPortfolio();
   if (S.tab === "deposit") pollDeposit();
   if (S.tab === "withdraw") pollWithdraw();
 }

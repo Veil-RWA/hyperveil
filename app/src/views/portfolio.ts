@@ -71,6 +71,7 @@ export function renderPortfolio(root: HTMLElement): void {
 }
 
 export function updatePortfolio(): void {
+  updateAccountPanel();
   if (!document.getElementById("pf-balances")) return;
   drawBalances();
   drawOrders();
@@ -244,13 +245,26 @@ function statusOf(v: OrderView): Status {
 function drawOrders(): void {
   const el = $("pf-orders");
   const head = `<div class="section-title"><h2>Orders</h2><span class="chip">${S.store?.orders.length ?? 0}</span></div>`;
-  if (!S.store || !S.store.orders.length) {
-    el.innerHTML = `${head}<div class="empty">No orders from this browser yet.</div>`;
-    return;
-  }
-  const views = orderViews ?? S.store.orders.map((stored) => ({ stored, routed: false, route: null }) as OrderView);
-  el.innerHTML = `${head}
-    <div class="table-wrap"><table>
+  el.innerHTML = `${head}${ordersTable("all")}`;
+  bindOrderActions(el);
+}
+
+type OrderFilter = "all" | "open" | "history";
+
+/** Open: still working, or with something left for the maker to do. */
+function isOpen(v: OrderView): boolean {
+  return v.routed || v.pool?.status === ORDER_OPEN || statusOf(v).actions.length > 0;
+}
+
+/** The orders this browser placed, as a table (Portfolio, and the trade
+ *  page's Open Orders / Order History tabs). */
+function ordersTable(filter: OrderFilter): string {
+  if (!S.store || !S.store.orders.length) return `<div class="empty">No orders from this browser yet.</div>`;
+  const all = orderViews ?? S.store.orders.map((stored) => ({ stored, routed: false, route: null }) as OrderView);
+  // Before the chain has answered, every order counts as open.
+  const views = filter === "all" ? all : all.filter((v) => (orderViews ? isOpen(v) : true) === (filter === "open"));
+  if (!views.length) return `<div class="empty">${filter === "open" ? "No open orders." : "No past orders yet."}</div>`;
+  return `<div class="table-wrap"><table>
       <thead><tr><th>Market</th><th>Side</th><th>Type</th><th class="r">Price</th><th class="r">Size</th><th class="r">Filled</th><th>Status</th><th>Placed</th><th></th></tr></thead>
       <tbody>${views
         .map((v) => {
@@ -280,9 +294,73 @@ function drawOrders(): void {
         })
         .join("")}</tbody>
     </table></div>`;
+}
+
+function bindOrderActions(el: HTMLElement): void {
   el.querySelectorAll<HTMLButtonElement>("[data-act]").forEach((b) =>
     b.addEventListener("click", () => void act(b.dataset.act as Status["actions"][number], b.dataset.order!)),
   );
+}
+
+// ── The trade page's account panel ──────────────────────────────────────────
+//
+// Hyperliquid keeps your balances and orders under the chart; so does the
+// trade page. Same data and actions as this page, in tabs.
+
+type AccountTab = "balances" | "open" | "history";
+let accountTab: AccountTab = "balances";
+
+export function renderAccountPanel(el: HTMLElement): void {
+  el.innerHTML = `<div class="ptabs" id="acct-tabs"></div><div class="acct-body" id="acct-body"></div>`;
+  updateAccountPanel();
+  void load();
+}
+
+export function updateAccountPanel(): void {
+  const tabs = document.getElementById("acct-tabs");
+  const body = document.getElementById("acct-body");
+  if (!tabs || !body) return;
+  const open = orderViews ? orderViews.filter(isOpen).length : S.store?.orders.length ?? 0;
+  const tab = (t: AccountTab, label: string) =>
+    `<button data-at="${t}" class="${t === accountTab ? "is-active" : ""}">${label}</button>`;
+  tabs.innerHTML = tab("balances", "Balances") + tab("open", `Open Orders${open ? ` (${open})` : ""}`) + tab("history", "Order History");
+  tabs.querySelectorAll<HTMLButtonElement>("[data-at]").forEach((b) =>
+    b.addEventListener("click", () => {
+      accountTab = b.dataset.at as AccountTab;
+      updateAccountPanel();
+    }),
+  );
+  if (!S.session) {
+    body.innerHTML = `<div class="gate gate-sm"><p>Connect the wallet you trade with to see your private balances and orders.</p><button class="btn btn-gold btn-sm" id="acct-connect">Connect wallet</button></div>`;
+    $("acct-connect").addEventListener("click", () => void connect());
+    return;
+  }
+  if (accountTab === "balances") {
+    if (!S.identity) {
+      body.innerHTML = `<div class="gate gate-sm"><p>Sign once to derive your Veil key. It stays on this device and only reads your notes.</p><button class="btn btn-gold btn-sm" id="acct-unlock">Unlock balances</button></div>`;
+      $("acct-unlock").addEventListener("click", () => void unlockBalances());
+      return;
+    }
+    body.innerHTML = balancesTable();
+    return;
+  }
+  body.innerHTML = ordersTable(accountTab);
+  bindOrderActions(body);
+}
+
+/** Private balances as rows: what can be traded, where it sits. */
+function balancesTable(): string {
+  const d = deployment().starknet;
+  const bal = (addr: string) => (S.notes ?? []).filter((n) => n.token === BigInt(addr)).reduce((t, n) => t + n.amount, 0n);
+  const row = (asset: string, where: string, amount: string) =>
+    `<tr><td>${escapeHtml(asset)}</td><td class="muted">${where}</td><td class="r num">${amount}</td></tr>`;
+  return `<div class="table-wrap"><table>
+      <thead><tr><th>Asset</th><th>Where</th><th class="r">Private balance</th></tr></thead>
+      <tbody>
+        ${row("USDC", "In Veil", S.notes ? units(bal(d.usdc), 6, 2) : "…")}
+        ${d.twins.map((t) => row(t.symbol, "On Hyperliquid", S.notes ? units(bal(t.address), t.decimals, 6) : "…")).join("")}
+      </tbody>
+    </table></div>`;
 }
 
 async function act(action: Status["actions"][number], orderId: string): Promise<void> {

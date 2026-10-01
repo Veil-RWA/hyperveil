@@ -27,6 +27,7 @@ import { ago, compactUsd, escapeHtml, hex, pct, price, units } from "../format";
 import { priceProblem, sizeProblem, type Market } from "../market";
 import { MIN_NOTIONAL_USDC, draftOrder, type Draft, type FormInput, type OrderKind } from "../orders";
 import { postOrder } from "../veil";
+import { renderAccountPanel, updateAccountPanel } from "./portfolio";
 
 const form: FormInput = { side: "buy", kind: "limit", size: "", price: "", slippage: 0.01 };
 let search = "";
@@ -90,43 +91,61 @@ export function pickDefaultMarket(): void {
 const change = (m: Market): number => (m.mid && m.prevDayPx ? Number(m.mid) / Number(m.prevDayPx) - 1 : NaN);
 
 // ── Skeleton ────────────────────────────────────────────────────────────────
+//
+// Hyperliquid's layout: the market bar across the top, the chart with the
+// order book beside it, the account panel underneath, and the order form down
+// the right-hand side.
+
+type BookTab = "book" | "trades";
+let bookTab: BookTab = "book";
+let pickerOpen = false;
 
 export function renderTrade(root: HTMLElement): void {
   root.innerHTML = `
     <div class="trade fade-up">
-      <aside class="markets panel">
+      <div class="mkt-bar panel" id="mk-head"></div>
+      <div class="mk-pop panel" id="mk-pop" hidden>
         <input class="field" id="mk-search" placeholder="Search markets" autocomplete="off" value="${escapeHtml(search)}" />
-        <div class="market-list" id="mk-list"></div>
-      </aside>
-      <section class="center">
-        <div class="market-head panel" id="mk-head"></div>
-        <div class="chart panel">
-          <div class="chart-bar">
-            <div class="intervals" id="chart-intervals">${INTERVALS.map(
-              (i) => `<button data-interval="${i}" class="${i === interval ? "is-active" : ""}">${i}</button>`,
-            ).join("")}</div>
-            <span class="chip">Hyperliquid</span>
-          </div>
-          <div class="chart-canvas" id="chart"><div class="chart-empty" id="chart-empty" hidden>No trades in this range yet.</div></div>
+        <div class="mk-table" id="mk-list"></div>
+      </div>
+      <div class="chart panel">
+        <div class="chart-bar">
+          <div class="intervals" id="chart-intervals">${INTERVALS.map(
+            (i) => `<button data-interval="${i}" class="${i === interval ? "is-active" : ""}">${i}</button>`,
+          ).join("")}</div>
+          <span class="chip">Hyperliquid</span>
         </div>
-        <div class="book-trades">
-          <div class="book panel">
-            <div class="section-title"><h2>Order book</h2><span class="chip" id="book-age">Hyperliquid</span></div>
-            <div class="rows num" id="book"></div>
-          </div>
-          <div class="trades panel">
-            <div class="section-title"><h2>Recent trades</h2><span class="chip" id="trades-age">Hyperliquid</span></div>
-            <div class="rows num" id="trades"></div>
-          </div>
+        <div class="chart-canvas" id="chart">
+          <div class="chart-legend num" id="chart-legend"></div>
+          <div class="chart-empty" id="chart-empty" hidden>No trades in this range yet.</div>
         </div>
-      </section>
+      </div>
+      <div class="book-panel panel">
+        <div class="ptabs" id="book-tabs">
+          <button data-bt="book">Order Book</button>
+          <button data-bt="trades">Trades</button>
+          <span class="chip" id="book-age">Hyperliquid</span>
+        </div>
+        <div class="rows num" id="book"></div>
+        <div class="rows num" id="trades"></div>
+      </div>
       <aside class="form panel" id="order-form"></aside>
+      <section class="acct panel" id="acct"></section>
     </div>`;
   $<HTMLInputElement>("mk-search").addEventListener("input", (e) => {
     search = (e.target as HTMLInputElement).value;
     updateMarketList();
   });
+  document.querySelectorAll<HTMLButtonElement>("#book-tabs [data-bt]").forEach((b) =>
+    b.addEventListener("click", () => {
+      bookTab = b.dataset.bt as BookTab;
+      paintBookTabs();
+    }),
+  );
+  paintBookTabs();
+  pickerOpen = false;
   mountChart();
+  renderAccountPanel($("acct"));
   formCoin = null;
   updateTrade();
 }
@@ -137,12 +156,126 @@ export function closeTrade(): void {
   chart = null;
 }
 
+/** Redraws the live parts; leaves the form's inputs alone. */
+export function updateTrade(): void {
+  if (!document.getElementById("mk-head")) return;
+  updateHead();
+  if (pickerOpen) updateMarketList();
+  updateChart();
+  updateBook();
+  updateTrades();
+  updateAges();
+  updateAccountPanel();
+  if (formCoin !== S.coin) renderForm();
+  else updateSummary();
+}
+
+// ── Market picker (Hyperliquid's coin dropdown) ─────────────────────────────
+
+function setPicker(open: boolean): void {
+  pickerOpen = open;
+  const pop = document.getElementById("mk-pop");
+  if (!pop) return;
+  pop.hidden = !open;
+  document.getElementById("mk-pick")?.classList.toggle("is-open", open);
+  if (open) {
+    updateMarketList();
+    const input = document.getElementById("mk-search") as HTMLInputElement | null;
+    input?.focus();
+    input?.select();
+  }
+}
+
+// One listener for the page's lifetime: a click outside the picker, or
+// Escape, closes it.
+document.addEventListener("click", (e) => {
+  if (!pickerOpen) return;
+  const t = e.target as Node;
+  if (document.getElementById("mk-pop")?.contains(t) || document.getElementById("mk-pick")?.contains(t)) return;
+  setPicker(false);
+});
+document.addEventListener("keydown", (e) => {
+  if (pickerOpen && e.key === "Escape") setPicker(false);
+});
+
+function updateMarketList(): void {
+  const el = document.getElementById("mk-list");
+  if (!el) return;
+  const rows = listed();
+  if (!rows.length) {
+    el.innerHTML = `<div class="empty">${S.markets.length ? "No match." : "Loading markets…"}</div>`;
+    return;
+  }
+  el.innerHTML = `
+    <div class="mk-row mk-head"><span>Market</span><span class="r">Last price</span><span class="r">24h change</span><span class="r">Volume</span><span></span></div>
+    ${rows
+      .map((m) => {
+        const c = change(m);
+        return `<button class="mk-row ${m.coin === S.coin ? "is-active" : ""}" data-coin="${escapeHtml(m.coin)}">
+          <span class="pair">${escapeHtml(m.label)}</span>
+          <span class="r num">${price(m.mid)}</span>
+          <span class="r num ${c >= 0 ? "buy" : "sell"}">${pct(c)}</span>
+          <span class="r num">${compactUsd(m.dayNtlVlm ?? NaN)}</span>
+          <span class="r">${tradable(m) ? `<span class="chip chip-gold">Private</span>` : `<span class="faint">View only</span>`}</span>
+        </button>`;
+      })
+      .join("")}`;
+  el.querySelectorAll<HTMLButtonElement>(".mk-row[data-coin]").forEach((b) =>
+    b.addEventListener("click", () => {
+      S.coin = b.dataset.coin!;
+      S.book = null;
+      S.trades = [];
+      try {
+        localStorage.setItem(COIN_KEY, S.coin);
+      } catch {
+        /* ignore */
+      }
+      setPicker(false);
+      refresh();
+    }),
+  );
+}
+
+// ── Market bar ──────────────────────────────────────────────────────────────
+
+function updateHead(): void {
+  const m = selectedMarket();
+  const el = $("mk-head");
+  if (!m) {
+    el.innerHTML = `<div class="muted">Loading Hyperliquid spot markets…</div>`;
+    return;
+  }
+  const c = change(m);
+  const diff = m.mid && m.prevDayPx ? Number(m.mid) - Number(m.prevDayPx) : NaN;
+  el.innerHTML = `
+    <button class="pair-btn ${pickerOpen ? "is-open" : ""}" id="mk-pick" title="Change market">
+      <span class="pair-name">${escapeHtml(m.label)}</span>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+    </button>
+    ${tradable(m) ? `<span class="chip chip-gold"><span class="dot"></span>Private</span>` : `<span class="chip">View only</span>`}
+    <div class="stat"><div class="k">Price</div><div class="v num">${price(m.mid)}</div></div>
+    <div class="stat"><div class="k">24h Change</div><div class="v num ${c >= 0 ? "buy" : "sell"}">${
+      Number.isFinite(diff) ? `${diff >= 0 ? "+" : ""}${price(diff)} / ${pct(c)}` : "—"
+    }</div></div>
+    <div class="stat"><div class="k">24h Volume</div><div class="v num">${compactUsd(m.dayNtlVlm ?? NaN)}</div></div>
+    <div class="stat"><div class="k">Market</div><div class="v">Hyperliquid spot</div></div>`;
+  $("mk-pick").addEventListener("click", () => setPicker(!pickerOpen));
+}
+
+// ── Chart ───────────────────────────────────────────────────────────────────
+
 function mountChart(): void {
   closeTrade();
-  chart = new PriceChart($("chart"), deployment().hyperliquid.api, interval, (empty) => {
-    const note = document.getElementById("chart-empty");
-    if (note) note.hidden = !empty;
-  });
+  chart = new PriceChart(
+    $("chart"),
+    deployment().hyperliquid.api,
+    interval,
+    (empty) => {
+      const note = document.getElementById("chart-empty");
+      if (note) note.hidden = !empty;
+    },
+    $("chart-legend"),
+  );
   document.querySelectorAll<HTMLButtonElement>("#chart-intervals button").forEach((b) =>
     b.addEventListener("click", () => {
       const next = b.dataset.interval;
@@ -163,77 +296,20 @@ function mountChart(): void {
 
 function updateChart(): void {
   const m = selectedMarket();
-  if (chart && m) chart.show(m.coin, m.base.szDecimals, Number(m.mid ?? 0));
+  if (chart && m) chart.show(m.coin, m.label, m.base.szDecimals, Number(m.mid ?? 0));
 }
 
-/** Redraws the live parts; leaves the form's inputs alone. */
-export function updateTrade(): void {
-  if (!document.getElementById("mk-list")) return;
-  updateMarketList();
-  updateHead();
-  updateChart();
-  updateBook();
-  updateTrades();
-  updateAges();
-  if (formCoin !== S.coin) renderForm();
-  else updateSummary();
-}
+// ── Order book / trades ─────────────────────────────────────────────────────
 
-function updateMarketList(): void {
-  const el = $("mk-list");
-  const rows = listed();
-  if (!rows.length) {
-    el.innerHTML = `<div class="empty">${S.markets.length ? "No match." : "Loading markets…"}</div>`;
-    return;
-  }
-  el.innerHTML = rows
-    .map((m) => {
-      const c = change(m);
-      const priv = tradable(m);
-      return `<button class="market-row ${m.coin === S.coin ? "is-active" : ""}" data-coin="${escapeHtml(m.coin)}">
-        <span class="pair">${escapeHtml(m.label)}</span>
-        <span class="px num">${price(m.mid)}</span>
-        <span class="sub">${priv ? `<span class="chip chip-gold" style="padding:.05rem .45rem">Private</span>` : "View only"}</span>
-        <span class="chg num ${c >= 0 ? "buy" : "sell"}">${pct(c)}</span>
-      </button>`;
-    })
-    .join("");
-  el.querySelectorAll<HTMLButtonElement>(".market-row").forEach((b) =>
-    b.addEventListener("click", () => {
-      S.coin = b.dataset.coin!;
-      S.book = null;
-      S.trades = [];
-      try {
-        localStorage.setItem(COIN_KEY, S.coin);
-      } catch {
-        /* ignore */
-      }
-      refresh();
-    }),
+function paintBookTabs(): void {
+  document.querySelectorAll<HTMLButtonElement>("#book-tabs [data-bt]").forEach((b) =>
+    b.classList.toggle("is-active", b.dataset.bt === bookTab),
   );
-}
-
-function updateHead(): void {
-  const m = selectedMarket();
-  const el = $("mk-head");
-  if (!m) {
-    el.innerHTML = `<div class="muted">Loading Hyperliquid spot markets…</div>`;
-    return;
-  }
-  const c = change(m);
-  el.innerHTML = `
-    <div>
-      <div class="kicker">Hyperliquid spot</div>
-      <h1>${escapeHtml(m.label)}</h1>
-    </div>
-    <div class="stat"><div class="k">Mid price</div><div class="v big num">${price(m.mid)}</div></div>
-    <div class="stat"><div class="k">24h change</div><div class="v num ${c >= 0 ? "buy" : "sell"}">${pct(c)}</div></div>
-    <div class="stat"><div class="k">24h volume</div><div class="v num">${compactUsd(m.dayNtlVlm ?? NaN)}</div></div>
-    <div class="stat" style="margin-left:auto">${
-      tradable(m)
-        ? `<span class="chip chip-gold"><span class="dot"></span>Private trading</span>`
-        : `<span class="chip">View only</span>`
-    }</div>`;
+  const book = document.getElementById("book");
+  const trades = document.getElementById("trades");
+  if (book) book.hidden = bookTab !== "book";
+  if (trades) trades.hidden = bookTab !== "trades";
+  updateAges();
 }
 
 /** "live · 2s ago", so a market that has not traded for an hour still shows
@@ -245,14 +321,16 @@ function freshness(): string {
 }
 
 function updateAges(): void {
-  const book = document.getElementById("book-age");
-  const trades = document.getElementById("trades-age");
-  if (book) book.textContent = freshness();
-  if (!trades) return;
+  const chip = document.getElementById("book-age");
+  if (!chip) return;
+  if (bookTab === "book") {
+    chip.textContent = freshness();
+    return;
+  }
   // The tape's own age: on a quiet testnet the last trade can be hours old,
   // which is the market, not the page.
   const last = S.trades[0];
-  trades.textContent = last ? `last trade ${ago(last.time)}` : freshness();
+  chip.textContent = last ? `last trade ${ago(last.time)}` : freshness();
 }
 
 function updateBook(): void {
@@ -263,7 +341,7 @@ function updateBook(): void {
     el.innerHTML = `<div class="empty">Loading…</div>`;
     return;
   }
-  const depth = 9;
+  const depth = 11;
   const cum = (levels: { sz: string }[]) => {
     let t = 0;
     return levels.map((l) => (t += Number(l.sz)));
@@ -273,15 +351,18 @@ function updateBook(): void {
   const ca = cum(asks);
   const cb = cum(bids);
   const max = Math.max(ca[ca.length - 1] ?? 0, cb[cb.length - 1] ?? 0) || 1;
+  const size = (v: number) => v.toLocaleString("en-US", { maximumFractionDigits: m.base.szDecimals });
   const row = (side: "ask" | "bid", l: { px: string; sz: string }, total: number) =>
-    `<div class="row ${side}"><span class="${side === "ask" ? "sell" : "buy"}">${price(l.px)}</span><span>${Number(l.sz).toLocaleString("en-US", { maximumFractionDigits: m.base.szDecimals })}</span><span>${total.toLocaleString("en-US", { maximumFractionDigits: m.base.szDecimals })}</span><i class="bar" style="width:${((total / max) * 100).toFixed(1)}%"></i></div>`;
+    `<div class="row ${side}"><span class="${side === "ask" ? "sell" : "buy"}">${price(l.px)}</span><span>${size(Number(l.sz))}</span><span>${size(total)}</span><i class="bar" style="width:${((total / max) * 100).toFixed(1)}%"></i></div>`;
   const bestAsk = Number(asks[0]?.px);
   const bestBid = Number(bids[0]?.px);
   const spread = bestAsk && bestBid ? bestAsk - bestBid : NaN;
   el.innerHTML = `
-    <div class="row head"><span>Price (${escapeHtml(m.quote.name)})</span><span>Size (${escapeHtml(m.base.name)})</span><span>Total</span></div>
+    <div class="row head"><span>Price</span><span>Size (${escapeHtml(m.base.name)})</span><span>Total (${escapeHtml(m.base.name)})</span></div>
     ${asks.map((l, i) => row("ask", l, ca[i])).reverse().join("")}
-    <div class="spread">Spread ${Number.isFinite(spread) ? `${price(spread)} · ${((spread / bestAsk) * 100).toFixed(3)}%` : "—"}</div>
+    <div class="spread"><span>Spread</span><span>${Number.isFinite(spread) ? price(spread) : "—"}</span><span>${
+      Number.isFinite(spread) ? `${((spread / bestAsk) * 100).toFixed(3)}%` : ""
+    }</span></div>
     ${bids.map((l, i) => row("bid", l, cb[i])).join("")}`;
   el.querySelectorAll<HTMLElement>(".row:not(.head)").forEach((r) =>
     r.addEventListener("click", () => {
@@ -302,9 +383,9 @@ function updateTrades(): void {
     return;
   }
   el.innerHTML =
-    `<div class="row head"><span>Price</span><span>Size</span><span>Time</span></div>` +
+    `<div class="row head"><span>Price</span><span>Size (${escapeHtml(m.base.name)})</span><span>Time</span></div>` +
     S.trades
-      .slice(0, 19)
+      .slice(0, 24)
       .map(
         (t) =>
           `<div class="row"><span class="${t.side === "B" ? "buy" : "sell"}">${price(t.px)}</span><span>${Number(t.sz).toLocaleString("en-US", { maximumFractionDigits: m.base.szDecimals })}</span><span class="faint">${new Date(t.time).toLocaleTimeString()}</span></div>`,
@@ -313,6 +394,9 @@ function updateTrades(): void {
 }
 
 // ── Order form ──────────────────────────────────────────────────────────────
+//
+// Hyperliquid's order: order type, side, what you can trade, price, size (or
+// a share of your balance), the button, then the order's numbers.
 
 function renderForm(): void {
   const el = $("order-form");
@@ -323,30 +407,36 @@ function renderForm(): void {
     return;
   }
   el.innerHTML = `
-    <div class="seg" id="f-side">
-      <button data-side="buy">Buy</button>
-      <button data-side="sell">Sell</button>
-    </div>
     <div class="kinds" id="f-kind">
       <button data-kind="market">Market</button>
       <button data-kind="limit">Limit</button>
       <button data-kind="post">Post only</button>
     </div>
+    <div class="seg" id="f-side">
+      <button data-side="buy">Buy</button>
+      <button data-side="sell">Sell</button>
+    </div>
+    <div class="avail num" id="f-avail"></div>
     <div id="f-price-box"></div>
-    <label class="lbl" for="f-size">Size</label>
-    <div class="field-wrap">
+    <div class="field-wrap labelled">
+      <span class="field-label">Size</span>
       <input class="field num" id="f-size" inputmode="decimal" placeholder="0.00" autocomplete="off" value="${escapeHtml(form.size)}" />
       <span class="field-unit">${escapeHtml(m.base.name)}</span>
     </div>
-    <div class="summary num" id="f-summary"></div>
+    <div class="pct-row">
+      <input type="range" id="f-pct" min="0" max="100" step="1" value="0" />
+      <span class="pct-box num"><span id="f-pct-val">0</span>%</span>
+    </div>
     <button class="btn btn-gold btn-block" id="f-submit"></button>
     <div class="hint" id="f-hint"></div>
+    <div class="summary num" id="f-summary"></div>
     <div class="privacy"><span>◆</span><span>Your wallet never appears on Hyperliquid. Orders settle in Veil's private pool; Hyperliquid sees only the HyperVeil omnibus.</span></div>`;
 
   el.querySelectorAll<HTMLButtonElement>("#f-side button").forEach((b) =>
     b.addEventListener("click", () => {
       form.side = b.dataset.side as "buy" | "sell";
       paintToggles();
+      setPct(0);
       updateSummary();
     }),
   );
@@ -360,12 +450,47 @@ function renderForm(): void {
   );
   $<HTMLInputElement>("f-size").addEventListener("input", (e) => {
     form.size = (e.target as HTMLInputElement).value;
+    setPct(0);
+    updateSummary();
+  });
+  $<HTMLInputElement>("f-pct").addEventListener("input", (e) => {
+    const p = Number((e.target as HTMLInputElement).value);
+    setPct(p);
+    const size = sizeForShare(p / 100);
+    if (size === null) return;
+    form.size = size;
+    $<HTMLInputElement>("f-size").value = size;
     updateSummary();
   });
   $("f-submit").addEventListener("click", () => void onSubmit());
   paintToggles();
   renderPriceBox();
   updateSummary();
+}
+
+function setPct(p: number): void {
+  const range = document.getElementById("f-pct") as HTMLInputElement | null;
+  const val = document.getElementById("f-pct-val");
+  if (range && Number(range.value) !== p) range.value = String(p);
+  if (range) range.style.setProperty("--p", `${p}%`);
+  if (val) val.textContent = String(p);
+}
+
+/** The size that spends `share` of the private balance on the paying side:
+ *  USDC for a buy (at the limit price, or the mid for a market order), the
+ *  base token for a sell. Rounded down to the market's lot size. */
+function sizeForShare(share: number): string | null {
+  const m = selectedMarket();
+  const twins = m ? tradable(m) : null;
+  if (!m || !twins) return null;
+  const offer = form.side === "buy" ? twins.quote : twins.base;
+  const bal = privateBalance(BigInt(offer.address));
+  if (bal === undefined) return null;
+  const held = Number(bal) / 10 ** offer.decimals;
+  const px = Number(form.kind === "market" ? m.mid : form.price || m.mid);
+  const base = form.side === "buy" ? (px > 0 ? (held * share) / px : 0) : held * share;
+  const lot = 10 ** m.base.szDecimals;
+  return (Math.floor(base * lot) / lot).toFixed(m.base.szDecimals);
 }
 
 function paintToggles(): void {
@@ -383,10 +508,9 @@ function renderPriceBox(): void {
   if (!m) return;
   if (form.kind === "market") {
     box.innerHTML = `
-      <label class="lbl">Max slippage</label>
-      <div class="slip">${[0.005, 0.01, 0.02]
+      <div class="slip-row"><span class="muted">Max slippage</span><div class="slip">${[0.005, 0.01, 0.02]
         .map((s) => `<button class="btn btn-ghost btn-sm ${form.slippage === s ? "is-active" : ""}" data-slip="${s}">${(s * 100).toFixed(1)}%</button>`)
-        .join("")}</div>`;
+        .join("")}</div></div>`;
     box.querySelectorAll<HTMLButtonElement>("[data-slip]").forEach((b) =>
       b.addEventListener("click", () => {
         form.slippage = Number(b.dataset.slip);
@@ -397,12 +521,11 @@ function renderPriceBox(): void {
     return;
   }
   box.innerHTML = `
-    <label class="lbl" for="f-price">Limit price</label>
-    <div class="field-wrap">
+    <div class="field-wrap labelled">
+      <span class="field-label">Price (${escapeHtml(m.quote.name)})</span>
       <input class="field num" id="f-price" inputmode="decimal" placeholder="${escapeHtml(price(m.mid))}" autocomplete="off" value="${escapeHtml(form.price)}" />
-      <span class="field-unit">${escapeHtml(m.quote.name)}</span>
-    </div>
-    <div class="hint"><button class="btn btn-ghost btn-sm" id="f-mid">Use mid</button></div>`;
+      <button class="field-action" id="f-mid" type="button">Mid</button>
+    </div>`;
   $<HTMLInputElement>("f-price").addEventListener("input", (e) => {
     form.price = (e.target as HTMLInputElement).value;
     updateSummary();
@@ -456,25 +579,33 @@ function updateSummary(): void {
   const sum = document.getElementById("f-summary");
   const btn = document.getElementById("f-submit") as HTMLButtonElement | null;
   const hint = document.getElementById("f-hint");
+  const avail = document.getElementById("f-avail");
   if (!m || !sum || !btn || !hint) return;
   const c = check();
   const offerTwin = c.twins ? (form.side === "buy" ? c.twins.quote : c.twins.base) : undefined;
   const wantTwin = c.twins ? (form.side === "buy" ? c.twins.base : c.twins.quote) : undefined;
   const bal = offerTwin ? privateBalance(BigInt(offerTwin.address)) : undefined;
+  const holding = c.twins ? privateBalance(BigInt(c.twins.base.address)) : undefined;
+
+  if (avail) {
+    const shown = (v: bigint | undefined, t: TwinConfig | undefined) =>
+      !t || !S.session ? "—" : v === undefined ? "Unlock below" : `${units(v, t.decimals)} ${escapeHtml(t.symbol)}`;
+    avail.innerHTML = `
+      <div class="line"><span>Available to trade</span><span>${shown(bal, offerTwin)}</span></div>
+      <div class="line"><span>Holding</span><span>${shown(holding, c.twins?.base)}</span></div>`;
+  }
+
   const lines: string[] = [];
   if (c.draft && offerTwin && wantTwin) {
+    lines.push(`<div class="line"><span>Order value</span><span>≈ ${c.draft.notional.toLocaleString("en-US", { maximumFractionDigits: 2 })} USDC</span></div>`);
     lines.push(`<div class="line"><span>Limit price</span><span>${price(c.draft.price)} ${escapeHtml(m.quote.name)}</span></div>`);
     lines.push(`<div class="line"><span>You pay at most</span><span>${units(c.draft.terms.offerAmount, offerTwin.decimals)} ${escapeHtml(offerTwin.symbol)}</span></div>`);
     lines.push(`<div class="line"><span>You receive at least</span><span>${units(c.draft.terms.wantAmount, wantTwin.decimals)} ${escapeHtml(wantTwin.symbol)}</span></div>`);
-    lines.push(`<div class="line"><span>Order value</span><span>≈ ${c.draft.notional.toLocaleString("en-US", { maximumFractionDigits: 2 })} USDC</span></div>`);
   } else {
     lines.push(`<div class="line"><span>Order value</span><span>—</span></div>`);
   }
-  lines.push(
-    `<div class="line"><span>Available (private)</span><span>${
-      !offerTwin || !S.session ? "—" : bal === undefined ? "Unlock in Portfolio" : `${units(bal, offerTwin.decimals)} ${escapeHtml(offerTwin.symbol)}`
-    }</span></div>`,
-  );
+  lines.push(`<div class="line"><span>Fees</span><span>Hyperliquid's, at most ${deployment().fees.maxFeeBps} bps</span></div>`);
+  lines.push(`<div class="line"><span>Message fees</span><span>paid for you</span></div>`);
   sum.innerHTML = lines.join("");
 
   const base = m.base.name;
@@ -489,7 +620,7 @@ function updateSummary(): void {
   } else if (!S.session) {
     label = "Connect wallet";
   } else if (S.allowlisting) {
-    label = "Enabling this account\u2026";
+    label = "Enabling this account…";
     disabled = true;
   } else if (S.kyc === false) {
     label = "Account not approved";
@@ -500,6 +631,7 @@ function updateSummary(): void {
   if (S.busy) disabled = true;
   btn.innerHTML = label;
   btn.disabled = disabled;
+  btn.classList.toggle("is-sell", form.side === "sell");
   hint.innerHTML = c.problem
     ? `<span class="err">${escapeHtml(c.problem)}</span>`
     : c.warning
